@@ -12,6 +12,14 @@ import { isAdmin } from '../middleware/adminAuth.js';
 
 const router = express.Router();
 
+// The macOS app signs in through ASWebAuthenticationSession, which only hands the final
+// redirect back to the app when it uses the app's URL scheme.
+export const DESKTOP_CALLBACK_URL = 'bytestash://auth/callback';
+
+export function desktopRedirect(params) {
+  return `${DESKTOP_CALLBACK_URL}?${new URLSearchParams(params).toString()}`;
+}
+
 function getBaseUrl(req) {
   const forwardedProto = req.get('X-Forwarded-Proto');
 
@@ -52,9 +60,11 @@ router.get('/auth', async (req, res) => {
     }
 
     const baseUrl = getBaseUrl(req);
+    const clientType = req.query.client === 'desktop' ? 'desktop' : 'web';
     const authUrl = await oidc.getAuthorizationUrl(
       baseUrl,
-      oidc.getScopes().join(' ')
+      oidc.getScopes().join(' '),
+      clientType
     );
 
     Logger.debug('Generated auth URL:', authUrl);
@@ -106,8 +116,19 @@ router.get('/logout', async (req, res) => {
 });
 
 router.get('/callback', async (req, res) => {
+  let clientType = 'web';
+  // Sends a login result to whichever client started the flow.
+  const redirectLogin = (error, message) => {
+    if (clientType === 'desktop') {
+      return res.redirect(desktopRedirect(message ? { error, message } : { error }));
+    }
+    const messageParam = message ? `&message=${encodeURIComponent(message)}` : '';
+    return res.redirect(`${process.env.BASE_PATH || ''}/login?error=${error}${messageParam}`);
+  };
+
   try {
     const oidc = await OIDCConfig.getInstance();
+    clientType = oidc.getStateClientType(req.query.state);
     if (!oidc.isEnabled()) {
       return res.status(404).json({ error: 'OIDC not enabled' });
     }
@@ -138,7 +159,7 @@ router.get('/callback', async (req, res) => {
       const invited = groupRepository.hasInvite(verifiedEmail);
       if (!appSettingsRepository.isRegistrationOpen() && !invited) {
         Logger.info('OIDC registration blocked: New accounts not allowed');
-        return res.redirect(`${process.env.BASE_PATH || ''}/login?error=registration_disabled`);
+        return redirectLogin('registration_disabled');
       }
     }
 
@@ -149,7 +170,7 @@ router.get('/callback', async (req, res) => {
 
     if (user.is_active === 0 || user.is_active === false) {
       Logger.error('OIDC login blocked: Account deactivated');
-      return res.redirect('/login?error=account_deactivated&message=Your account has been deactivated');
+      return redirectLogin('account_deactivated', 'Your account has been deactivated');
     }
 
     await userRepository.updateLastLogin(user.id);
@@ -173,6 +194,9 @@ router.get('/callback', async (req, res) => {
     // Set OIDC login config
     oidc.loggedIn = true;
 
+    if (clientType === 'desktop') {
+      return res.redirect(desktopRedirect({ token }));
+    }
     res.redirect(`${process.env.BASE_PATH || ''}/auth/callback?token=${token}`);
   } catch (error) {
     Logger.error('OIDC callback error:', error);
@@ -191,8 +215,7 @@ router.get('/callback', async (req, res) => {
       errorDetails = 'Authorization denied by identity provider';
     }
 
-    const messageParam = errorDetails ? `&message=${encodeURIComponent(errorDetails)}` : '';
-    res.redirect(`/login?error=${errorType}${messageParam}`);
+    redirectLogin(errorType, errorDetails);
   }
 });
 

@@ -1,0 +1,61 @@
+name: ByteStash
+options:
+  bundleIdPrefix: app.bytestash.mac
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+packages:
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    from: "2.2.0"
+  Highlightr:
+    url: https://github.com/raspu/Highlightr
+    from: "2.2.1"
+targets:
+  ByteStash:
+    type: application
+    platform: macOS
+    sources: [ByteStash]
+    dependencies:
+      - package: KeyboardShortcuts
+      - package: Highlightr
+    info:
+      path: ByteStash/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: ByteStash
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.developer-tools
+        NSHumanReadableCopyright: ""
+        CFBundleURLTypes:
+          - CFBundleURLName: app.bytestash.mac.auth
+            CFBundleURLSchemes: [bytestash]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.bytestash.mac
+        PRODUCT_NAME: ByteStash
+        SWIFT_VERSION: "5.10"
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: ByteStash/Resources/ByteStash.entitlements
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+        COMBINE_HIDPI_IMAGES: YES
+  ByteStashTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [ByteStashTests]
+    dependencies:
+      - target: ByteStash
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_IDENTITY: "-"
+schemes:
+  ByteStash:
+    build:
+      targets:
+        ByteStash: all
+    test:
+      targets: [ByteStashTests]
