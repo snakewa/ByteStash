@@ -31,7 +31,7 @@ final class OIDCLogin: NSObject, ASWebAuthenticationPresentationContextProviding
         return try Self.token(from: callbackURL)
     }
 
-    static func token(from url: URL) throws -> String {
+    nonisolated static func token(from url: URL) throws -> String {
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         if let token = items.first(where: { $0.name == "token" })?.value, !token.isEmpty {
             return token
@@ -41,7 +41,7 @@ final class OIDCLogin: NSObject, ASWebAuthenticationPresentationContextProviding
         throw APIError.server(status: 0, message: message ?? Self.describe(error))
     }
 
-    static func describe(_ code: String) -> String {
+    nonisolated static func describe(_ code: String) -> String {
         switch code {
         case "registration_disabled": return "This server isn't accepting new accounts."
         case "account_deactivated": return "Your account has been deactivated."
