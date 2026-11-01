@@ -86,7 +86,7 @@ class OIDCConfig {
     }, 5 * 60 * 1000);
   }
 
-  async generateAuthParameters() {
+  async generateAuthParameters(clientType = 'web') {
     const code_verifier = client.randomPKCECodeVerifier();
     const code_challenge = await client.calculatePKCECodeChallenge(code_verifier);
     const state = client.randomState();
@@ -95,6 +95,7 @@ class OIDCConfig {
     this.#stateMap.set(state, {
       code_verifier,
       nonce,
+      clientType,
       timestamp: Date.now()
     });
 
@@ -105,9 +106,15 @@ class OIDCConfig {
     };
   }
 
-  async getAuthorizationUrl(baseUrl, scope = 'openid profile email') {
+  // Which client started the login for this state ('web' or 'desktop'); read before the
+  // callback consumes the state so errors can be sent back to the same client.
+  getStateClientType(state) {
+    return (state && this.#stateMap.get(state)?.clientType) || 'web';
+  }
+
+  async getAuthorizationUrl(baseUrl, scope = 'openid profile email', clientType = 'web') {
     const callback_url = this.getCallbackUrl(baseUrl);
-    const { code_challenge, state, nonce } = await this.generateAuthParameters();
+    const { code_challenge, state, nonce } = await this.generateAuthParameters(clientType);
 
     const parameters = {
       redirect_uri: callback_url,

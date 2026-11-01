@@ -1,0 +1,66 @@
+name: macOS app
+
+on:
+  push:
+    branches: [main, "feat/macos-*"]
+    paths: ["macos/**", ".github/workflows/macos.yml"]
+    tags: ["macos-v*"]
+  pull_request:
+    paths: ["macos/**", ".github/workflows/macos.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: macos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Test
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild test \
+            -project ByteStash.xcodeproj -scheme ByteStash \
+            -destination 'platform=macOS' -derivedDataPath build \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO \
+            | tee build/test.log | grep -E "error:|warning: .*ByteStash/|Test Case .*(passed|failed)|\*\* TEST" || true
+          grep -q "\*\* TEST SUCCEEDED \*\*" build/test.log
+
+      - name: Build release app
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project ByteStash.xcodeproj -scheme ByteStash -configuration Release \
+            -destination 'generic/platform=macOS' -derivedDataPath build \
+            ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO \
+            | tee build/release.log | grep -E "error:|\*\* BUILD" || true
+          grep -q "\*\* BUILD SUCCEEDED \*\*" build/release.log
+          ditto -c -k --keepParent build/Build/Products/Release/ByteStash.app ByteStash-macOS.zip
+
+      - name: Show build errors
+        if: failure()
+        run: grep -h -B2 -A6 "error:" build/*.log | head -200 || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ByteStash-macOS
+          path: macos/ByteStash-macOS.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/macos-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" ByteStash-macOS.zip --title "ByteStash for Mac ${GITHUB_REF_NAME#macos-v}" --notes "Unsigned build. Right-click the app and choose Open the first time."
