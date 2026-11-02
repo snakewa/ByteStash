@@ -7,6 +7,8 @@ extension KeyboardShortcuts.Name {
     static let quickSearch = Self("quickSearch", default: .init(.space, modifiers: [.option, .command]))
     /// Global "new snippet from clipboard" hotkey; unset by default.
     static let newFromClipboard = Self("newFromClipboard")
+    /// Global "save the selected text as a snippet" hotkey. ⇧⌥⌘C by default.
+    static let saveSelection = Self("saveSelection", default: .init(.c, modifiers: [.shift, .option, .command]))
 }
 
 /// Spotlight-style floating panel: appears over any app, takes keyboard focus without
@@ -59,6 +61,9 @@ final class QuickSearchController {
         self.state = state
         KeyboardShortcuts.onKeyUp(for: .quickSearch) { [weak self] in self?.toggle() }
         KeyboardShortcuts.onKeyUp(for: .newFromClipboard) { [weak self] in self?.newFromClipboard() }
+        KeyboardShortcuts.onKeyUp(for: .saveSelection) { [weak self] in
+            Task { @MainActor in await self?.saveSelection() }
+        }
     }
 
     func toggle() {
@@ -82,16 +87,32 @@ final class QuickSearchController {
 
     func hide() { panel.orderOut(nil) }
 
+    /// Saves the text selected in the frontmost app as a new snippet and opens it for editing.
+    func saveSelection() async {
+        guard state.store != nil else { return }
+        let source = NSWorkspace.shared.frontmostApplication
+        guard let text = await Paster.captureSelection() else {
+            NSSound.beep()
+            return
+        }
+        createSnippet(from: text, sourceApp: source?.localizedName)
+    }
+
     /// Saves the clipboard text as a new snippet and opens it for editing.
     func newFromClipboard() {
-        guard let store = state.store,
-              let text = NSPasteboard.general.string(forType: .string),
+        guard let text = NSPasteboard.general.string(forType: .string),
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        createSnippet(from: text, sourceApp: nil)
+    }
+
+    private func createSnippet(from text: String, sourceApp: String?) {
+        guard let store = state.store else { return }
         let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? "Clipboard"
         var draft = Snippet.newDraft(id: Fragment.newLocalID())
         draft.title = String(firstLine.trimmingCharacters(in: .whitespaces).prefix(60))
         draft.fragments[0].code = text
         draft.fragments[0].language = UserDefaults.standard.string(forKey: "defaultLanguage") ?? "plaintext"
+        if let sourceApp { draft.description = "Saved from \(sourceApp)" }
         let created = store.create(from: draft)
         state.selection = .all
         state.reveal(created.id)

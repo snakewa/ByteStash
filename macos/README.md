@@ -30,22 +30,28 @@ Requires macOS 14 Sonoma or later. Universal (Apple silicon and Intel).
   `#tag` and `lang:python` narrow the results.
 - **Quick search** (⌥⌘Space anywhere, configurable): type, ↑↓ to pick, ↩ copies the
   code, ⇥ switches between files, ⌘↩ opens the snippet in the main window.
-- **New snippet from clipboard** global hotkey (set it in Settings).
-- **Menu bar**: quick search, new from clipboard, and one-click copy of pinned and
-  favorite snippets.
+- **Save selected text** (⇧⌥⌘C anywhere): copies the selection in the current app and
+  saves it as a new snippet. **New snippet from clipboard** hotkey too (set it in Settings).
+- **Menu bar popover**: search box, Recent, Pinned & Favorites and Recently Edited
+  snippets; click or ↩ to copy.
+- **Auto-paste** (Settings → General): choosing a snippet in quick search or the menu bar
+  pastes it straight into the app you were using. Auto-paste and Save selected text need
+  Accessibility access (System Settings → Privacy & Security → Accessibility).
 - **Offline**: everything is cached on disk. Edits made offline are queued and sent in
   order when the server is back; the sidebar footer shows pending changes.
 - Pin, favorite, duplicate, private/public, share links (with expiry and sign-in
   requirement), open in browser, recycle bin with restore.
 
-Sharing with groups and people is shown (who owns it, read-only, locked) but is still
-managed in the web app.
+- **Sharing** (Share → Sharing…): private, public, or shared with groups and people,
+  each with Can view or Can edit, plus Lock editing. Groups you belong to appear under
+  Shared in the sidebar.
 
 ## Keyboard shortcuts
 
 | Shortcut | Action |
 | --- | --- |
 | ⌥⌘Space | Quick search (global) |
+| ⇧⌥⌘C | Save selected text as a snippet (global) |
 | ⌘N | New snippet |
 | ⌘K | Quick search |
 | ⌘R | Sync now |
@@ -100,5 +106,8 @@ ByteStashTests/ model, search, outbox and language tests
 - **編輯器**：語法高亮、行號、多檔案、依檔名自動判斷語言、自動儲存。
 - **搜尋**：標題、說明、標籤、檔名和程式碼全文；`#標籤`、`lang:python` 可縮小範圍。
 - **快速搜尋**：任何地方按 ⌥⌘Space，↩ 複製程式碼，⌘↩ 在主視窗開啟。
-- **選單列**：快速搜尋、用剪貼簿新增、一鍵複製置頂和最愛片段。
+- **選單列面板**：搜尋框、最近用過、置頂和最愛、最近編輯，點一下就複製。
+- **自動貼上**（設定 → 一般）：選好片段直接貼到原本的 App。
+- **存選取文字**：任何 App 選好文字按 ⇧⌥⌘C 存成片段。自動貼上和這個功能需要開「輔助使用」權限。
+- **分享**：私人、公開，或指定群組和人（可檢視／可編輯），也可以鎖定編輯。側欄「共享」下會列出你的群組。
 - **離線**：所有片段都快取在本機，離線時的修改會排隊，連線後依序同步。

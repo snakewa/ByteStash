@@ -48,11 +48,11 @@ struct Outbox: Codable, Equatable {
         case let .update(id, payload):
             if let index = changes.lastIndex(where: { $0.snippetID == id }) {
                 switch changes[index] {
-                case .create:
-                    changes[index] = .create(tempID: id, payload: payload)
+                case let .create(_, older):
+                    changes[index] = .create(tempID: id, payload: payload.keepingSharing(of: older))
                     return
-                case .update:
-                    changes[index] = .update(id: id, payload: payload)
+                case let .update(_, older):
+                    changes[index] = .update(id: id, payload: payload.keepingSharing(of: older))
                     return
                 default:
                     break

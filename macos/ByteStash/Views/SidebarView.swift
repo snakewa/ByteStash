@@ -15,6 +15,11 @@ struct SidebarView: View {
 
             Section("Shared") {
                 row(.shared, count: store.library.shared.count)
+                ForEach(store.library.groups) { group in
+                    let item = SidebarItem.group(group.id, group.name)
+                    row(item, count: store.library.snippets(for: item, query: SearchQuery(""), sort: .updated).count)
+                        .padding(.leading, 12)
+                }
                 row(.publicFeed, count: store.library.publicFeed.count)
             }
 

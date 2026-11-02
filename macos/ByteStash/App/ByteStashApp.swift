@@ -15,10 +15,10 @@ struct ByteStashApp: App {
         .commands { AppCommands(state: appDelegate.state, quickSearch: { appDelegate.quickSearch?.show() }) }
 
         MenuBarExtra("ByteStash", systemImage: "curlybraces.square", isInserted: $showMenuBarIcon) {
-            MenuBarContent(quickSearch: { appDelegate.quickSearch?.show() },
-                           newFromClipboard: { appDelegate.quickSearch?.newFromClipboard() })
+            MenuBarPanel(newFromClipboard: { appDelegate.quickSearch?.newFromClipboard() })
                 .environmentObject(appDelegate.state)
         }
+        .menuBarExtraStyle(.window)
 
         Settings {
             SettingsView()
@@ -95,40 +95,5 @@ struct AppCommands: Commands {
             Button("Shared with Me") { state.selection = .shared }.keyboardShortcut("3")
             Button("Recycle Bin") { state.selection = .recycled }.keyboardShortcut("4")
         }
-    }
-}
-
-struct MenuBarContent: View {
-    @EnvironmentObject private var app: AppState
-    @Environment(\.openWindow) private var openWindow
-    let quickSearch: () -> Void
-    let newFromClipboard: () -> Void
-
-    var body: some View {
-        Button("Quick Search…") { quickSearch() }
-        Button("New Snippet from Clipboard") { newFromClipboard() }
-            .disabled(app.store == nil)
-        Button("Open ByteStash") {
-            openWindow(id: "main")
-            NSApp.activate(ignoringOtherApps: true)
-        }
-        if let store = app.store {
-            let pinned = store.library.own.filter { $0.isPinned || $0.isFavorite }.prefix(12)
-            if !pinned.isEmpty {
-                Divider()
-                Text("Copy to Clipboard")
-                ForEach(Array(pinned)) { snippet in
-                    Button(snippet.title.isEmpty ? "Untitled" : snippet.title) {
-                        Clipboard.copy(snippet.fragments.first?.code ?? "")
-                    }
-                }
-            }
-            Divider()
-            Button("Sync Now") { Task { await store.sync() } }
-        }
-        Divider()
-        SettingsLink()
-        Button("Quit ByteStash") { NSApp.terminate(nil) }
-            .keyboardShortcut("q")
     }
 }

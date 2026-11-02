@@ -90,9 +90,11 @@ final class SnippetStore: ObservableObject {
             // Shared and public lists are optional extras; older servers lack /api/groups.
             let s = (try? await shared) ?? library.shared
             let p = (try? await publicFeed) ?? library.publicFeed
+            let g = (try? await api.groups()) ?? library.groups
             // A change made while the request was in flight wins over the fetched copy.
             guard outbox.isEmpty else { return }
-            library = Library(own: o, recycled: r, shared: s, publicFeed: p, lastSync: Date())
+            library = Library(own: o, recycled: r, shared: s, publicFeed: p, groups: g,
+                              recent: library.recent, lastSync: Date())
             isOffline = false
             saveLibrary()
         } catch {
@@ -213,7 +215,10 @@ final class SnippetStore: ObservableObject {
         if snippet.id < 0 || library.own.contains(where: { $0.id == snippet.id }) { return true }
         guard let me = currentUserID else { return false }
         if snippet.userID == me { return true }
-        return !snippet.isPublic && snippet.shares.contains { $0.permission == "edit" && ($0.type == "group" || $0.id == me) }
+        let myGroups = Set(library.groups.map(\.id))
+        return !snippet.isPublic && snippet.shares.contains {
+            $0.permission == "edit" && ($0.type == "group" ? myGroups.contains($0.id) : $0.id == me)
+        }
     }
 
     func isOwn(_ snippet: Snippet) -> Bool {
@@ -239,6 +244,31 @@ final class SnippetStore: ObservableObject {
         replaceLocal(id: snippet.id) { _ in edited }
         let payload = SnippetPayload(edited, includeVisibility: visibilityChanged || snippet.id < 0)
         commit(.update(id: snippet.id, payload: payload), flushDelay: 1.0)
+    }
+
+    /// Changes who can see the snippet: "private", "public" or "protected" (shared with
+    /// `shares`), and whether editing is locked for everyone.
+    func saveSharing(_ snippet: Snippet, visibility: String, shares: [ShareTarget], locked: Bool) {
+        var edited = snippet
+        edited.visibility = visibility
+        edited.isPublic = visibility == "public"
+        edited.shares = visibility == "protected" ? shares : []
+        edited.editPermission = locked ? "readonly" : "owner"
+        edited.updatedAt = Date()
+        replaceLocal(id: snippet.id) { _ in edited }
+        commit(.update(id: snippet.id, payload: SnippetPayload(edited, includeVisibility: true)))
+    }
+
+    func searchUsers(_ query: String) async -> [ShareUser] {
+        (try? await api.searchUsers(query)) ?? []
+    }
+
+    /// Remembers that a snippet was copied or opened, for "Recent" lists.
+    func markUsed(_ snippet: Snippet) {
+        library.recent.removeAll { $0 == snippet.id }
+        library.recent.insert(snippet.id, at: 0)
+        if library.recent.count > 30 { library.recent.removeLast(library.recent.count - 30) }
+        saveLibrary()
     }
 
     func setPinned(_ snippet: Snippet, _ value: Bool) {

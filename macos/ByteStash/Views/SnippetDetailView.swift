@@ -14,6 +14,7 @@ struct SnippetDetailView: View {
     @State private var selectedFragment = 0
     @State private var saveTask: Task<Void, Never>?
     @State private var showShareSheet = false
+    @State private var showSharing = false
     @State private var copied = false
 
     @AppStorage(EditorSettings.fontSizeKey) private var fontSize: Double = 13
@@ -71,6 +72,7 @@ struct SnippetDetailView: View {
         }
         .onDisappear { saveNow() }
         .sheet(isPresented: $showShareSheet) { ShareLinkSheet(snippet: snippet) }
+        .sheet(isPresented: $showSharing) { SharingSheet(snippet: snippet) }
     }
 
     // MARK: Header
@@ -86,7 +88,7 @@ struct SnippetDetailView: View {
                     Label("Locked", systemImage: "lock.fill")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .help("The owner locked this snippet. Unlock it in the web app to edit.")
+                        .help(own ? "Editing is locked. Unlock it under Share → Sharing…" : "The owner locked this snippet.")
                 } else if !editable {
                     Label("Read only", systemImage: "eye")
                         .font(.caption)
@@ -98,6 +100,9 @@ struct SnippetDetailView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1...4)
                 .disabled(!editable)
+            if snippet.visibility == "protected", !snippet.shares.isEmpty {
+                ShareSummary(shares: snippet.shares)
+            }
             HStack(spacing: 10) {
                 TagEditor(tags: $draft.categories, editable: editable)
                 Spacer()
@@ -241,19 +246,17 @@ struct SnippetDetailView: View {
                     .help(snippet.isPinned ? "Unpin" : "Pin")
 
                     Menu {
-                        Picker("Visibility", selection: visibilityBinding) {
-                            Label("Private", systemImage: "lock").tag("private")
-                            Label("Public", systemImage: "globe").tag("public")
-                            if snippet.visibility == "protected" {
-                                Label("Shared with people or groups", systemImage: "person.2").tag("protected")
-                            }
+                        Button("Sharing…") {
+                            saveNow()
+                            showSharing = true
                         }
-                        .pickerStyle(.inline)
-                        Divider()
                         Button("Create Share Link…") { showShareSheet = true }
                             .disabled(snippet.id < 0)
                     } label: {
                         Label("Share", systemImage: visibilityIcon)
+                    } primaryAction: {
+                        saveNow()
+                        showSharing = true
                     }
                     .help("Visibility and share links")
                 }
@@ -273,21 +276,6 @@ struct SnippetDetailView: View {
         case "protected": return "person.2"
         default: return "lock"
         }
-    }
-
-    private var visibilityBinding: Binding<String> {
-        Binding(
-            get: { draft.visibility },
-            set: { value in
-                guard value != draft.visibility, value != "protected" else { return }
-                draft.visibility = value
-                draft.isPublic = value == "public"
-                draft.shares = []
-                saveTask?.cancel()
-                dirty = false
-                store.save(draft, visibilityChanged: true)
-            }
-        )
     }
 
     // MARK: Saving

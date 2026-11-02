@@ -45,10 +45,24 @@ final class AppState: ObservableObject {
                 self.selectedSnippetID = new
             }
             .store(in: &idCancellables)
+        trackFrontmostApp()
         restore()
     }
 
     private var idCancellables = Set<AnyCancellable>()
+
+    /// The last app other than ByteStash that was frontmost: where auto-paste goes.
+    @Published private(set) var lastExternalApp: NSRunningApplication?
+
+    private func trackFrontmostApp() {
+        NSWorkspace.shared.notificationCenter
+            .publisher(for: NSWorkspace.didActivateApplicationNotification)
+            .compactMap { $0.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication }
+            .filter { $0 != NSRunningApplication.current }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] app in self?.lastExternalApp = app }
+            .store(in: &idCancellables)
+    }
 
     var api: APIClient? {
         guard let serverURL else { return nil }
@@ -179,8 +193,9 @@ final class AppState: ObservableObject {
         case let .language(name): language = name
         default: break
         }
-        if selection == .recycled || selection == .publicFeed || selection == .shared {
-            selection = .all
+        switch selection {
+        case .recycled, .publicFeed, .shared, .group: selection = .all
+        default: break
         }
         let snippet = store.create(language: language, categories: categories)
         searchText = ""
