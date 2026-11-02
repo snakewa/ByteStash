@@ -63,6 +63,11 @@ struct CodeEditor: NSViewRepresentable {
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
+        // macOS 14 stopped clipping views to their bounds by default; without this the ruler
+        // and text view can paint over the SwiftUI header above the editor.
+        scrollView.clipsToBounds = true
+        scrollView.contentView.clipsToBounds = true
+        textView.clipsToBounds = true
         scrollView.documentView = textView
 
         let ruler = LineNumberRuler(textView: textView)
@@ -217,6 +222,9 @@ final class LineNumberRuler: NSRulerView {
         super.init(scrollView: textView.enclosingScrollView, orientation: .verticalRuler)
         clientView = textView
         ruleThickness = 36
+        reservedThicknessForMarkers = 0
+        reservedThicknessForAccessoryView = 0
+        clipsToBounds = true
         NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: NSText.didChangeNotification, object: textView)
         NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: NSView.boundsDidChangeNotification, object: nil)
     }
@@ -226,6 +234,15 @@ final class LineNumberRuler: NSRulerView {
     @objc private func refresh() { needsDisplay = true }
 
     override var isFlipped: Bool { true }
+
+    /// Draw everything ourselves: NSRulerView's own drawing adds a baseline and marker area,
+    /// and its dirty rect can reach outside the ruler.
+    override func draw(_ dirtyRect: NSRect) {
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: bounds).setClip()
+        drawHashMarksAndLabels(in: bounds)
+        NSGraphicsContext.restoreGraphicsState()
+    }
 
     override func drawHashMarksAndLabels(in rect: NSRect) {
         backgroundColor.setFill()

@@ -50,6 +50,7 @@ struct SnippetDetailView: View {
                 )
                 // Keyed by tab index, not fragment id: ids change when the server confirms a save.
                 .id(selectedFragment)
+                .clipped()
             } else {
                 Spacer()
             }

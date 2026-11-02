@@ -219,6 +219,7 @@ private struct QuickPreview: View {
                 lightTheme: lightTheme,
                 darkTheme: darkTheme
             )
+            .clipped()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
