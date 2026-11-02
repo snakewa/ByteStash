@@ -16,7 +16,10 @@ struct QuickSearchView: View {
         let search = SearchQuery(query)
         let pool = store.library.everything
         if search.isEmpty {
-            return Array(Library.sorted(pool, by: .updated, query: search).prefix(30))
+            let recent = store.library.recentSnippets
+            let recentIDs = Set(recent.map(\.id))
+            let rest = Library.sorted(pool.filter { !recentIDs.contains($0.id) }, by: .updated, query: search)
+            return Array((recent + rest).prefix(30))
         }
         return Array(Library.sorted(pool.filter(search.matches), by: .updated, query: search).prefix(50))
     }
@@ -86,7 +89,7 @@ struct QuickSearchView: View {
 
             Divider()
             HStack(spacing: 14) {
-                hint("↩", "Copy")
+                hint("↩", Paster.autoPasteEnabled ? "Paste" : "Copy")
                 hint("⌘↩", "Open")
                 hint("⇥", "Next file")
                 hint("esc", "Close")
@@ -132,14 +135,23 @@ struct QuickSearchView: View {
 
     private func copy(_ snippet: Snippet?) {
         guard let snippet, snippet.fragments.indices.contains(fragmentIndex) else { return }
-        Clipboard.copy(snippet.fragments[fragmentIndex].code)
-        flash = "Copied"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { dismiss() }
+        app.store?.markUsed(snippet)
+        let code = snippet.fragments[fragmentIndex].code
+        if Paster.autoPasteEnabled {
+            // The panel never activates ByteStash, so the app underneath gets the paste.
+            dismiss()
+            Paster.copyAndMaybePaste(code)
+        } else {
+            Clipboard.copy(code)
+            flash = "Copied"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { dismiss() }
+        }
     }
 
     private func open(_ snippet: Snippet?) {
         guard let snippet else { return }
         dismiss()
+        app.store?.markUsed(snippet)
         app.reveal(snippet.id)
     }
 }

@@ -211,9 +211,19 @@ struct SnippetPayload: Codable, Hashable, Sendable {
     var description: String
     var categories: [String]
     var fragments: [FragmentPayload]
+    struct SharePayload: Codable, Hashable, Sendable {
+        var type: String
+        var id: Int
+        var permission: String
+    }
+
     var visibility: String?
     var is_public: Bool?
+    var share_with: [SharePayload]?
+    var edit_permission: String?
 
+    /// `includeVisibility` sends visibility, share targets and the edit lock; leave it off
+    /// for content edits so a share editor can't change who the snippet is shared with.
     init(_ snippet: Snippet, includeVisibility: Bool) {
         title = snippet.title
         description = snippet.description
@@ -226,11 +236,40 @@ struct SnippetPayload: Codable, Hashable, Sendable {
                 position: index
             )
         }
-        if includeVisibility, snippet.visibility != "protected" {
+        if includeVisibility {
             visibility = snippet.visibility
             is_public = snippet.visibility == "public"
+            edit_permission = snippet.editPermission == "readonly" ? "readonly" : "owner"
+            if snippet.visibility == "protected" {
+                share_with = snippet.shares.map { SharePayload(type: $0.type, id: $0.id, permission: $0.permission) }
+            }
         }
     }
+}
+
+extension SnippetPayload {
+    /// This payload folded onto an earlier unsent one: sharing settings from `older` are
+    /// kept when this one doesn't set any.
+    func keepingSharing(of older: SnippetPayload) -> SnippetPayload {
+        guard visibility == nil, older.visibility != nil else { return self }
+        var merged = self
+        merged.visibility = older.visibility
+        merged.is_public = older.is_public
+        merged.share_with = older.share_with
+        merged.edit_permission = older.edit_permission
+        return merged
+    }
+}
+
+struct ShareGroup: Codable, Hashable, Identifiable, Sendable {
+    var id: Int
+    var name: String
+    var description: String?
+}
+
+struct ShareUser: Codable, Hashable, Identifiable, Sendable {
+    var id: Int
+    var username: String
 }
 
 struct Pagination: Codable, Sendable {

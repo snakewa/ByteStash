@@ -43,8 +43,14 @@ final class ModelTests: XCTestCase {
         let snippet = Snippet(id: 1, title: "T", visibility: "public")
         XCTAssertNil(SnippetPayload(snippet, includeVisibility: false).visibility)
         XCTAssertEqual(SnippetPayload(snippet, includeVisibility: true).visibility, "public")
-        let shared = Snippet(id: 2, title: "S", visibility: "protected")
-        XCTAssertNil(SnippetPayload(shared, includeVisibility: true).visibility)
+        let shared = Snippet(id: 2, title: "S", editPermission: "readonly",
+                             shares: [ShareTarget(type: "group", id: 4, name: "devs", permission: "edit")],
+                             visibility: "protected")
+        let payload = SnippetPayload(shared, includeVisibility: true)
+        XCTAssertEqual(payload.visibility, "protected")
+        XCTAssertEqual(payload.share_with, [.init(type: "group", id: 4, permission: "edit")])
+        XCTAssertEqual(payload.edit_permission, "readonly")
+        XCTAssertNil(SnippetPayload(shared, includeVisibility: false).share_with)
     }
 
     func testNormalizeServerURL() {
@@ -73,7 +79,12 @@ final class SearchTests: XCTestCase {
             Snippet(id: 3, title: "Fetch JSON", updatedAt: Date(timeIntervalSince1970: 200), isPinned: true,
                     fragments: [Fragment(fileName: "fetch.ts", code: "await fetch(url)", language: "typescript", position: 0)]),
         ]
-        lib.shared = [Snippet(id: 10, title: "Team docker notes", categories: ["docker"])]
+        lib.shared = [
+            Snippet(id: 10, title: "Team docker notes", categories: ["docker"],
+                    shares: [ShareTarget(type: "group", id: 4, name: "devs", permission: "view")], visibility: "protected"),
+            Snippet(id: 11, title: "From amy", shares: [ShareTarget(type: "user", id: 2, name: "me", permission: "edit")],
+                    visibility: "protected"),
+        ]
         return lib
     }()
 
@@ -98,6 +109,7 @@ final class SearchTests: XCTestCase {
         XCTAssertEqual(library.snippets(for: .language("bash"), query: SearchQuery(""), sort: .title).map(\.id), [1, 2])
         XCTAssertEqual(library.snippets(for: .untagged, query: SearchQuery(""), sort: .updated).map(\.id), [3])
         XCTAssertEqual(library.snippets(for: .shared, query: SearchQuery("docker"), sort: .updated).map(\.id), [10])
+        XCTAssertEqual(library.snippets(for: .group(4, "devs"), query: SearchQuery(""), sort: .updated).map(\.id), [10])
     }
 
     func testTitleMatchesRankFirst() {
@@ -123,6 +135,21 @@ final class OutboxTests: XCTestCase {
         outbox.enqueue(.update(id: 5, payload: payload("a")))
         outbox.enqueue(.update(id: 5, payload: payload("b")))
         XCTAssertEqual(outbox.changes, [.update(id: 5, payload: payload("b"))])
+    }
+
+    func testContentEditKeepsPendingSharingChange() {
+        var outbox = Outbox()
+        let shared = Snippet(id: 5, title: "a", shares: [ShareTarget(type: "user", id: 2, name: "amy", permission: "view")],
+                             visibility: "protected")
+        outbox.enqueue(.update(id: 5, payload: SnippetPayload(shared, includeVisibility: true)))
+        var edited = shared
+        edited.title = "b"
+        outbox.enqueue(.update(id: 5, payload: SnippetPayload(edited, includeVisibility: false)))
+        guard case let .update(_, payload) = outbox.changes.first else { return XCTFail("no update") }
+        XCTAssertEqual(outbox.count, 1)
+        XCTAssertEqual(payload.title, "b")
+        XCTAssertEqual(payload.visibility, "protected")
+        XCTAssertEqual(payload.share_with?.first?.id, 2)
     }
 
     func testUpdateFoldsIntoPendingCreate() {

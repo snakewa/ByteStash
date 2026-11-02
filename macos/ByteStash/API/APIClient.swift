@@ -134,6 +134,14 @@ struct APIClient: Sendable {
         let _: EmptyResponse = try await send("PATCH", "api/snippets/\(id)/favorite", body: ["is_favorite": value])
     }
 
+    /// Groups the user can share with (all groups for admins).
+    func groups() async throws -> [ShareGroup] { try await get("api/groups") }
+
+    /// People to share with, matched by username.
+    func searchUsers(_ query: String) async throws -> [ShareUser] {
+        try await get("api/groups/share-users", query: ["q": query])
+    }
+
     /// Creates a share link and returns its web URL.
     func createShareLink(snippetID: Int, requiresAuth: Bool, expiresInSeconds: Int?) async throws -> URL {
         struct Body: Encodable { var snippetId: Int; var requiresAuth: Bool; var expiresIn: Int? }

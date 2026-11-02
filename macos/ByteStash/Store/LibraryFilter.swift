@@ -10,6 +10,7 @@ enum SidebarItem: Hashable, Codable {
     case untagged
     case category(String)
     case language(String)
+    case group(Int, String)
 
     var title: String {
         switch self {
@@ -22,6 +23,7 @@ enum SidebarItem: Hashable, Codable {
         case .untagged: return "Untagged"
         case let .category(name): return name
         case let .language(name): return Languages.displayName(for: name)
+        case let .group(_, name): return name
         }
     }
 
@@ -36,6 +38,7 @@ enum SidebarItem: Hashable, Codable {
         case .untagged: return "tag.slash"
         case .category: return "tag"
         case .language: return "chevron.left.forwardslash.chevron.right"
+        case .group: return "person.3"
         }
     }
 }
@@ -116,7 +119,42 @@ struct Library: Codable, Equatable {
     var recycled: [Snippet] = []
     var shared: [Snippet] = []
     var publicFeed: [Snippet] = []
+    var groups: [ShareGroup] = []
+    /// Snippet ids in the order they were last copied or opened, most recent first.
+    var recent: [Int] = []
     var lastSync: Date?
+
+    init(own: [Snippet] = [], recycled: [Snippet] = [], shared: [Snippet] = [], publicFeed: [Snippet] = [],
+         groups: [ShareGroup] = [], recent: [Int] = [], lastSync: Date? = nil) {
+        self.own = own
+        self.recycled = recycled
+        self.shared = shared
+        self.publicFeed = publicFeed
+        self.groups = groups
+        self.recent = recent
+        self.lastSync = lastSync
+    }
+
+    /// Tolerates caches written by older versions that lack newer keys.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        own = try c.decodeIfPresent([Snippet].self, forKey: .own) ?? []
+        recycled = try c.decodeIfPresent([Snippet].self, forKey: .recycled) ?? []
+        shared = try c.decodeIfPresent([Snippet].self, forKey: .shared) ?? []
+        publicFeed = try c.decodeIfPresent([Snippet].self, forKey: .publicFeed) ?? []
+        groups = try c.decodeIfPresent([ShareGroup].self, forKey: .groups) ?? []
+        recent = try c.decodeIfPresent([Int].self, forKey: .recent) ?? []
+        lastSync = try c.decodeIfPresent(Date.self, forKey: .lastSync)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case own, recycled, shared, publicFeed, groups, recent, lastSync
+    }
+
+    /// Recently used snippets that still exist, most recent first.
+    var recentSnippets: [Snippet] {
+        recent.compactMap { id in everything.first { $0.id == id } }
+    }
 
     /// Everything searchable from the quick panel: own first, then others' snippets.
     var everything: [Snippet] {
@@ -137,7 +175,7 @@ struct Library: Codable, Equatable {
 
     func source(for item: SidebarItem) -> [Snippet] {
         switch item {
-        case .shared: return shared
+        case .shared, .group: return shared
         case .publicFeed: return publicFeed
         case .recycled: return recycled
         default: return own
@@ -152,6 +190,7 @@ struct Library: Codable, Equatable {
             case .untagged: return snippet.categories.isEmpty
             case let .category(name): return snippet.categories.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
             case let .language(name): return snippet.fragments.contains { $0.language == name }
+            case let .group(id, _): return snippet.shares.contains { $0.type == "group" && $0.id == id }
             default: return true
             }
         }

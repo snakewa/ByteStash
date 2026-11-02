@@ -1,5 +1,6 @@
 import KeyboardShortcuts
 import ServiceManagement
+import AppKit
 import SwiftUI
 
 struct SettingsView: View {
@@ -18,11 +19,29 @@ private struct GeneralSettings: View {
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
     @AppStorage("defaultLanguage") private var defaultLanguage = "plaintext"
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @AppStorage(Paster.autoPasteKey) private var autoPaste = false
+    @State private var accessibilityGranted = Paster.isTrusted(prompt: false)
 
     var body: some View {
         Form {
             KeyboardShortcuts.Recorder("Quick search:", name: .quickSearch)
+            KeyboardShortcuts.Recorder("Save selected text:", name: .saveSelection)
             KeyboardShortcuts.Recorder("New snippet from clipboard:", name: .newFromClipboard)
+            Toggle("Paste into the previous app after choosing a snippet", isOn: $autoPaste)
+                .onChange(of: autoPaste) { _, on in
+                    if on { accessibilityGranted = Paster.isTrusted(prompt: true) }
+                }
+            if !accessibilityGranted {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                    Text("Auto-paste and “Save selected text” need Accessibility access.")
+                        .font(.caption)
+                    Button("Open Settings") {
+                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                    }
+                    .controlSize(.small)
+                }
+            }
             Toggle("Show in menu bar", isOn: $showMenuBarIcon)
             Toggle("Open at login", isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) { _, enabled in
@@ -35,6 +54,10 @@ private struct GeneralSettings: View {
             Picker("Default language:", selection: $defaultLanguage) {
                 ForEach(Languages.all, id: \.self) { Text(Languages.displayName(for: $0)).tag($0) }
             }
+        }
+        .onAppear { accessibilityGranted = Paster.isTrusted(prompt: false) }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            accessibilityGranted = Paster.isTrusted(prompt: false)
         }
     }
 }
