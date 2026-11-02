@@ -26,6 +26,9 @@ Requires macOS 14 Sonoma or later. Universal (Apple silicon and Intel).
   (guessed from the file name), syntax highlighting (highlight.js themes, separate light and
   dark theme), line numbers, auto-indent, find bar (⌘F inside the editor). Changes save
   automatically.
+- **List or grid** (⌥⌘1 / ⌥⌘2): the grid shows cards with highlighted code previews.
+- **Markdown**: Markdown files open in a rendered preview (GitHub style, highlighted
+  code blocks); switch to Source to edit (⌥⌘P).
 - **Search** in the list: words match title, description, tags, file names and code;
   `#tag` and `lang:python` narrow the results.
 - **Quick search** (⌥⌘Space anywhere, configurable): type, ↑↓ to pick, ↩ copies the
@@ -79,7 +82,7 @@ xcodegen generate
 open ByteStash.xcodeproj
 ```
 
-Requires Xcode 16. Dependencies (Swift packages): KeyboardShortcuts, Highlightr.
+Requires Xcode 16. Dependencies (Swift packages): KeyboardShortcuts, Highlightr, MarkdownUI.
 
 ```
 ByteStash/
@@ -104,6 +107,8 @@ ByteStashTests/ model, search, outbox and language tests
 - **登入**：帳號密碼、伺服器的 SSO/OIDC（例如 Google），或伺服器關閉帳號時直接進入。
 - **三欄介面**：側欄（全部、置頂、最愛、未分類、共享給我、公開、各標籤和語言、回收桶）、清單、編輯器。
 - **編輯器**：語法高亮、行號、多檔案、依檔名自動判斷語言、自動儲存。
+- **清單／格狀**（⌥⌘1 / ⌥⌘2）：格狀模式用卡片顯示有語法高亮的程式碼預覽。
+- **Markdown**：預覽（程式碼區塊有語法高亮）和原始碼可以切換（⌥⌘P）。
 - **搜尋**：標題、說明、標籤、檔名和程式碼全文；`#標籤`、`lang:python` 可縮小範圍。
 - **快速搜尋**：任何地方按 ⌥⌘Space，↩ 複製程式碼，⌘↩ 在主視窗開啟。
 - **選單列面板**：搜尋框、最近用過、置頂和最愛、最近編輯，點一下就複製。

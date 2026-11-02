@@ -5,6 +5,8 @@ struct SnippetListView: View {
     @EnvironmentObject private var app: AppState
     @EnvironmentObject private var store: SnippetStore
     @AppStorage("sortOrder") private var sort: SortOrder = .updated
+    @AppStorage("listLayout") private var layout = "list"
+    @Environment(\.colorScheme) private var colorScheme
 
     private var snippets: [Snippet] {
         store.library.snippets(for: app.selection ?? .all, query: SearchQuery(app.searchText), sort: sort)
@@ -12,11 +14,17 @@ struct SnippetListView: View {
 
     var body: some View {
         let items = snippets
-        List(selection: $app.selectedSnippetID) {
-            ForEach(items) { snippet in
-                SnippetRow(snippet: snippet, pending: store.outbox.hasPending(for: snippet.id))
-                    .tag(snippet.id)
-                    .contextMenu { SnippetActions(snippet: snippet) }
+        Group {
+            if layout == "grid" {
+                grid(items)
+            } else {
+                List(selection: $app.selectedSnippetID) {
+                    ForEach(items) { snippet in
+                        SnippetRow(snippet: snippet, pending: store.outbox.hasPending(for: snippet.id))
+                            .tag(snippet.id)
+                            .contextMenu { SnippetActions(snippet: snippet) }
+                    }
+                }
             }
         }
         .overlay {
@@ -33,6 +41,12 @@ struct SnippetListView: View {
         .navigationSubtitle("\(items.count) snippet\(items.count == 1 ? "" : "s")")
         .toolbar {
             ToolbarItemGroup {
+                Picker("Layout", selection: $layout) {
+                    Label("List", systemImage: "list.bullet").tag("list")
+                    Label("Grid", systemImage: "square.grid.2x2").tag("grid")
+                }
+                .pickerStyle(.segmented)
+                .help("List or grid (⌥⌘1 / ⌥⌘2)")
                 Menu {
                     Picker("Sort By", selection: $sort) {
                         ForEach(SortOrder.allCases) { Text($0.label).tag($0) }
@@ -52,6 +66,33 @@ struct SnippetListView: View {
         .onDeleteCommand {
             guard let id = app.selectedSnippetID, let snippet = store.library.snippet(id: id) else { return }
             if snippet.isRecycled { store.deleteForever(snippet) } else if store.isOwn(snippet) { store.moveToRecycleBin(snippet) }
+        }
+    }
+
+    private func grid(_ items: [Snippet]) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 210, maximum: 340), spacing: 12)], spacing: 12) {
+                    ForEach(items) { snippet in
+                        SnippetCard(snippet: snippet, selected: app.selectedSnippetID == snippet.id, dark: colorScheme == .dark)
+                            .id(snippet.id)
+                            .onTapGesture { app.selectedSnippetID = snippet.id }
+                            .contextMenu { SnippetActions(snippet: snippet) }
+                    }
+                }
+                .padding(12)
+            }
+            .onChange(of: app.selectedSnippetID) { _, id in
+                if let id { withAnimation { proxy.scrollTo(id) } }
+            }
+        }
+        .focusable()
+        .onMoveCommand { direction in
+            guard !items.isEmpty else { return }
+            let index = items.firstIndex { $0.id == app.selectedSnippetID } ?? -1
+            let step = (direction == .left || direction == .up) ? -1 : 1
+            let next = min(max(index + step, 0), items.count - 1)
+            app.selectedSnippetID = items[next].id
         }
     }
 
@@ -157,6 +198,60 @@ struct SnippetActions: View {
                 Button("Move to Recycle Bin", role: .destructive) { store.moveToRecycleBin(snippet) }
             }
         }
+    }
+}
+
+/// A grid card: title, tags and the first lines of highlighted code.
+struct SnippetCard: View {
+    let snippet: Snippet
+    let selected: Bool
+    let dark: Bool
+
+    private var codePreview: String {
+        let code = snippet.fragments.first?.code ?? ""
+        return code.split(separator: "\n", omittingEmptySubsequences: false).prefix(10).joined(separator: "\n")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(SyntaxHighlighter.highlight(codePreview, language: snippet.primaryLanguage, dark: dark, fontSize: 10.5))
+                .lineLimit(10)
+                .frame(maxWidth: .infinity, minHeight: 120, maxHeight: 120, alignment: .topLeading)
+                .padding(8)
+                .background(SyntaxHighlighter.background(dark: dark))
+                .clipped()
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    if snippet.isPinned { Image(systemName: "pin.fill").foregroundStyle(.orange).imageScale(.small) }
+                    Text(snippet.title.isEmpty ? "Untitled" : snippet.title).font(.headline).lineLimit(1)
+                    Spacer(minLength: 2)
+                    if snippet.isFavorite { Image(systemName: "star.fill").foregroundStyle(.yellow).imageScale(.small) }
+                }
+                HStack(spacing: 6) {
+                    Text(Languages.displayName(for: snippet.primaryLanguage))
+                        .font(.caption2.weight(.medium))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(.quaternary, in: Capsule())
+                    if !snippet.categories.isEmpty {
+                        Text(snippet.categories.map { "#\($0)" }.joined(separator: " "))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .padding(10)
+        }
+        .background(.background)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(selected ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: selected ? 2 : 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 
