@@ -17,6 +17,7 @@ struct SnippetDetailView: View {
     @State private var showSharing = false
     @State private var copied = false
 
+    @AppStorage("markdownPreview") private var markdownPreview = true
     @AppStorage(EditorSettings.fontSizeKey) private var fontSize: Double = 13
     @AppStorage(EditorSettings.wrapKey) private var wrapLines = false
     @AppStorage(EditorSettings.lineNumbersKey) private var lineNumbers = true
@@ -29,6 +30,12 @@ struct SnippetDetailView: View {
     }
 
     private var editable: Bool { store.canEdit(snippet) }
+
+    private var isMarkdown: Bool {
+        guard draft.fragments.indices.contains(selectedFragment) else { return false }
+        let fragment = draft.fragments[selectedFragment]
+        return fragment.language == "markdown" || Languages.guess(fileName: fragment.fileName) == "markdown"
+    }
     private var own: Bool { store.isOwn(snippet) }
 
     var body: some View {
@@ -37,7 +44,10 @@ struct SnippetDetailView: View {
             Divider()
             fragmentTabs
             Divider()
-            if draft.fragments.indices.contains(selectedFragment) {
+            if draft.fragments.indices.contains(selectedFragment),
+               isMarkdown, markdownPreview {
+                MarkdownPreview(text: draft.fragments[selectedFragment].code)
+            } else if draft.fragments.indices.contains(selectedFragment) {
                 CodeEditor(
                     text: $draft.fragments[selectedFragment].code,
                     language: draft.fragments[selectedFragment].language,
@@ -50,6 +60,7 @@ struct SnippetDetailView: View {
                 )
                 // Keyed by tab index, not fragment id: ids change when the server confirms a save.
                 .id(selectedFragment)
+                .clipped()
             } else {
                 Spacer()
             }
@@ -153,6 +164,17 @@ struct SnippetDetailView: View {
             }
 
             if draft.fragments.indices.contains(selectedFragment) {
+                if isMarkdown {
+                    Picker("Markdown view", selection: $markdownPreview) {
+                        Text("Preview").tag(true)
+                        Text("Source").tag(false)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("Rendered preview or Markdown source (⌥⌘P)")
+                    .keyboardShortcut("p", modifiers: [.command, .option])
+                }
                 if editable {
                     TextField("File name", text: fileNameBinding)
                         .textFieldStyle(.roundedBorder)

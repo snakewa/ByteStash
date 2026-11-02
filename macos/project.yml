@@ -11,6 +11,9 @@ packages:
   Highlightr:
     url: https://github.com/raspu/Highlightr
     from: "2.2.1"
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    from: "2.4.0"
 targets:
   ByteStash:
     type: application
@@ -19,6 +22,7 @@ targets:
     dependencies:
       - package: KeyboardShortcuts
       - package: Highlightr
+      - package: MarkdownUI
     info:
       path: ByteStash/Resources/Info.plist
       properties:

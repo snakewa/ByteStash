@@ -22,6 +22,7 @@ struct MainView: View {
     @EnvironmentObject private var app: AppState
     @EnvironmentObject private var store: SnippetStore
     @State private var columnVisibility = NavigationSplitViewVisibility.all
+    @AppStorage("listLayout") private var layout = "list"
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -29,7 +30,7 @@ struct MainView: View {
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
         } content: {
             SnippetListView()
-                .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 480)
+                .navigationSplitViewColumnWidth(min: 240, ideal: layout == "grid" ? 480 : 300, max: layout == "grid" ? 900 : 480)
         } detail: {
             if let id = app.selectedSnippetID, let snippet = store.library.snippet(id: id) {
                 SnippetDetailView(snippet: snippet)

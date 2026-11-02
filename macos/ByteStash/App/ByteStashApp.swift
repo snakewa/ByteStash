@@ -89,6 +89,13 @@ struct AppCommands: Commands {
             }
             .disabled(snippet == nil || snippet?.isRecycled == true || snippet.map { state.store?.isOwn($0) != true } == true)
         }
+        CommandGroup(before: .sidebar) {
+            Button("as List") { UserDefaults.standard.set("list", forKey: "listLayout") }
+                .keyboardShortcut("1", modifiers: [.command, .option])
+            Button("as Grid") { UserDefaults.standard.set("grid", forKey: "listLayout") }
+                .keyboardShortcut("2", modifiers: [.command, .option])
+            Divider()
+        }
         CommandGroup(after: .sidebar) {
             Button("All Snippets") { state.selection = .all }.keyboardShortcut("1")
             Button("Favorites") { state.selection = .favorites }.keyboardShortcut("2")
