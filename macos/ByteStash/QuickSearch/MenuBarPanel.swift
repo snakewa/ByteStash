@@ -17,21 +17,23 @@ struct MenuBarPanel: View {
     private struct MenuSection: Identifiable {
         let id: String
         let title: String
-        let snippets: [Snippet]
+        let snippets: [AccountSnippet]
     }
 
     private var sections: [MenuSection] {
-        guard let store = app.store else { return [] }
         let search = SearchQuery(query)
         if !search.isEmpty {
-            let hits = Library.sorted(store.library.everything.filter(search.matches), by: .updated, query: search)
+            let hits = Library.sorted(app.everything.filter { search.matches($0.snippet) }, by: .updated, query: search, snippet: \.snippet)
             return [MenuSection(id: "results", title: "Results", snippets: Array(hits.prefix(40)))]
         }
-        let recent = Array(store.library.recentSnippets.prefix(8))
+        let recent = Array(app.recentItems.prefix(8))
         let recentIDs = Set(recent.map(\.id))
-        let pinned = store.library.own.filter { ($0.isPinned || $0.isFavorite) && !recentIDs.contains($0.id) }
-        let latest = Library.sorted(store.library.own, by: .updated, query: search)
-            .filter { !recentIDs.contains($0.id) && !$0.isPinned && !$0.isFavorite }
+        let own = app.accounts.flatMap { account in
+            account.store.library.own.map { AccountSnippet(account: account.id, snippet: $0) }
+        }
+        let pinned = own.filter { ($0.snippet.isPinned || $0.snippet.isFavorite) && !recentIDs.contains($0.id) }
+        let latest = Library.sorted(own, by: .updated, query: search, snippet: \.snippet)
+            .filter { !recentIDs.contains($0.id) && !$0.snippet.isPinned && !$0.snippet.isFavorite }
         return [
             MenuSection(id: "recent", title: "Recent", snippets: recent),
             MenuSection(id: "pinned", title: "Pinned & Favorites", snippets: Array(pinned.prefix(12))),
@@ -44,7 +46,7 @@ struct MenuBarPanel: View {
         let flat = sections.flatMap(\.snippets)
 
         VStack(spacing: 0) {
-            if app.store == nil {
+            if app.accounts.isEmpty {
                 VStack(spacing: 10) {
                     Text("Not signed in").font(.headline)
                     Button("Open ByteStash") { openMain() }
@@ -74,16 +76,17 @@ struct MenuBarPanel: View {
                                     .padding(.horizontal, 12)
                                     .padding(.top, 8)
                                     .padding(.bottom, 2)
-                                ForEach(section.snippets) { snippet in
-                                    let index = flat.firstIndex(where: { $0.id == snippet.id }) ?? -1
-                                    MenuBarRow(snippet: snippet, selected: index == selected)
-                                        .id("\(section.id)-\(snippet.id)")
+                                ForEach(section.snippets) { item in
+                                    let index = flat.firstIndex(where: { $0.id == item.id }) ?? -1
+                                    MenuBarRow(snippet: item.snippet, selected: index == selected,
+                                               account: app.hasMultipleAccounts ? app.account(item.account)?.info : nil)
+                                        .id(rowID(section.id, item.id))
                                         .contentShape(Rectangle())
-                                        .onTapGesture { use(snippet) }
+                                        .onTapGesture { use(item) }
                                         .onHover { if $0 { selected = index } }
                                         .contextMenu {
-                                            Button("Copy") { copyOnly(snippet) }
-                                            Button("Open in ByteStash") { open(snippet) }
+                                            Button("Copy") { copyOnly(item) }
+                                            Button("Open in ByteStash") { open(item) }
                                         }
                                 }
                             }
@@ -100,7 +103,7 @@ struct MenuBarPanel: View {
                         guard flat.indices.contains(value) else { return }
                         let id = flat[value].id
                         if let section = sections.first(where: { $0.snippets.contains { $0.id == id } }) {
-                            proxy.scrollTo("\(section.id)-\(id)")
+                            proxy.scrollTo(rowID(section.id, id))
                         }
                     }
                 }
@@ -134,13 +137,14 @@ struct MenuBarPanel: View {
                 Label("Open", systemImage: "macwindow")
             }
             Spacer()
-            if let store = app.store {
+            if !app.accounts.isEmpty {
+                let offline = app.accounts.contains { $0.store.isOffline || $0.needsSignIn }
                 Button {
-                    Task { await store.sync() }
+                    Task { await app.syncAll() }
                 } label: {
-                    Image(systemName: store.isOffline ? "wifi.slash" : "arrow.clockwise")
+                    Image(systemName: offline ? "wifi.slash" : "arrow.clockwise")
                 }
-                .help(store.isOffline ? "Offline" : "Sync now")
+                .help(offline ? "An account is offline or needs sign-in" : "Sync now")
             }
             SettingsLink {
                 Image(systemName: "gearshape")
@@ -172,25 +176,29 @@ struct MenuBarPanel: View {
         selected = (selected + delta + count) % count
     }
 
+    private func rowID(_ section: String, _ ref: SnippetRef) -> String {
+        "\(section)-\(ref.account)-\(ref.id)"
+    }
+
     /// Click or ↩: copy, and paste into the previous app when auto-paste is on.
-    private func use(_ snippet: Snippet?) {
-        guard let snippet, let code = snippet.fragments.first?.code else { return }
-        app.store?.markUsed(snippet)
+    private func use(_ item: AccountSnippet?) {
+        guard let item, let code = item.snippet.fragments.first?.code else { return }
+        app.markUsed(item)
         dismiss()
         Paster.copyAndMaybePaste(code, into: previousApp)
     }
 
-    private func copyOnly(_ snippet: Snippet) {
-        app.store?.markUsed(snippet)
-        Clipboard.copy(snippet.fragments.first?.code ?? "")
+    private func copyOnly(_ item: AccountSnippet) {
+        app.markUsed(item)
+        Clipboard.copy(item.snippet.fragments.first?.code ?? "")
         dismiss()
     }
 
-    private func open(_ snippet: Snippet) {
+    private func open(_ item: AccountSnippet) {
         dismiss()
         openWindow(id: "main")
-        app.store?.markUsed(snippet)
-        app.reveal(snippet.id)
+        app.markUsed(item)
+        app.reveal(item.id)
     }
 
     private func openMain() {
@@ -203,6 +211,7 @@ struct MenuBarPanel: View {
 private struct MenuBarRow: View {
     let snippet: Snippet
     let selected: Bool
+    var account: AccountInfo?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -219,6 +228,9 @@ private struct MenuBarRow: View {
                 }
             }
             Spacer()
+            if let account {
+                AccountBadge(info: account, showName: false)
+            }
             Text(Languages.displayName(for: snippet.primaryLanguage))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)

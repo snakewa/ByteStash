@@ -8,9 +8,9 @@ struct SettingsView: View {
         TabView {
             GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }
             EditorSettingsView().tabItem { Label("Editor", systemImage: "textformat") }
-            AccountSettings().tabItem { Label("Account", systemImage: "person.crop.circle") }
+            AccountSettings().tabItem { Label("Accounts", systemImage: "person.2.crop.square.stack") }
         }
-        .frame(width: 480)
+        .frame(width: 520)
         .padding(20)
     }
 }
@@ -91,28 +91,125 @@ private struct EditorSettingsView: View {
 
 private struct AccountSettings: View {
     @EnvironmentObject private var app: AppState
+    @State private var confirmClear: String?
+    @State private var addRequest: AddAccountRequest?
 
     var body: some View {
         Form {
-            if let user = app.user, let server = app.serverURL {
-                LabeledContent("Server:", value: server.absoluteString)
-                LabeledContent("Signed in as:", value: user.username)
-                if let store = app.store {
-                    LabeledContent("Snippets:", value: "\(store.library.own.count) own, \(store.library.shared.count) shared")
-                    if let last = store.library.lastSync {
-                        LabeledContent("Last sync:", value: last.formatted(date: .abbreviated, time: .shortened))
-                    }
-                    if !store.outbox.isEmpty {
-                        LabeledContent("Waiting to sync:", value: "\(store.outbox.count) change(s)")
-                    }
-                }
-                HStack {
-                    Button("Sign Out") { app.signOut(keepServer: true) }
-                    Button("Sign Out and Clear Cache", role: .destructive) { app.signOut(keepServer: false) }
-                }
-            } else {
+            if app.accounts.isEmpty {
                 Text("Not signed in.").foregroundStyle(.secondary)
+            } else {
+                if app.hasMultipleAccounts {
+                    Section {
+                        Picker("New snippets go to:", selection: Binding(
+                            get: { app.defaultAccountID },
+                            set: { app.defaultAccountID = $0 }
+                        )) {
+                            ForEach(app.accounts) { Text($0.info.displayName).tag($0.id) }
+                        }
+                        Text("Used for ⌘N in the merged view, the menu bar and the global hotkeys. Accounts never sync with each other; snippets only move when you choose Copy to or Move to.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                ForEach(app.accounts) { account in
+                    AccountSection(account: account, store: account.store, confirmClear: $confirmClear, addRequest: $addRequest)
+                }
+            }
+            Section {
+                Button("Add Account…") { addRequest = AddAccountRequest(reauth: nil) }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(minHeight: 360)
+        .sheet(item: $addRequest) { request in
+            SignInView(adding: true, reauth: request.reauth)
+                .frame(width: 440)
+                .padding(24)
+        }
+        .confirmationDialog("Sign out and delete the offline copy?", isPresented: Binding(
+            get: { confirmClear != nil },
+            set: { if !$0 { confirmClear = nil } }
+        )) {
+            Button("Sign Out and Clear Cache", role: .destructive) {
+                if let id = confirmClear { app.signOut(id, clearCache: true) }
+                confirmClear = nil
+            }
+        } message: {
+            Text("Changes that haven't synced yet are lost.")
+        }
+    }
+}
+
+private struct AccountSection: View {
+    @EnvironmentObject private var app: AppState
+    @ObservedObject var account: Account
+    @ObservedObject var store: SnippetStore
+    @Binding var confirmClear: String?
+    @Binding var addRequest: AddAccountRequest?
+
+    var body: some View {
+        Section {
+            TextField("Name:", text: Binding(
+                get: { account.info.name },
+                set: { name in app.updateInfo(account.id) { $0.name = name } }
+            ), prompt: Text(account.info.serverURL?.host ?? ""))
+            Picker("Color:", selection: Binding(
+                get: { account.info.color },
+                set: { color in app.updateInfo(account.id) { $0.color = color } }
+            )) {
+                ForEach(AccountColor.allCases) { color in
+                    Label {
+                        Text(color.label)
+                    } icon: {
+                        Image(systemName: "circle.fill").foregroundStyle(color.color)
+                    }
+                    .tag(color)
+                }
+            }
+            LabeledContent("Server:", value: account.info.server)
+            LabeledContent("Signed in as:", value: account.info.username)
+            LabeledContent("Snippets:", value: "\(store.library.own.count) own, \(store.library.shared.count) shared")
+            if let last = store.library.lastSync {
+                LabeledContent("Last sync:", value: last.formatted(date: .abbreviated, time: .shortened))
+            }
+            if !store.outbox.isEmpty {
+                LabeledContent("Waiting to sync:", value: "\(store.outbox.count) change(s)")
+            }
+            Toggle("Keep an offline copy on this Mac", isOn: Binding(
+                get: { account.info.keepsOfflineCache },
+                set: { keep in app.updateInfo(account.id) { $0.keepsOfflineCache = keep } }
+            ))
+            .help("Turn off if this server's snippets must not be stored on this Mac. They then load again each time the app starts.")
+            HStack {
+                if account.needsSignIn {
+                    Button("Sign In Again…") { addRequest = AddAccountRequest(reauth: account.info) }
+                }
+                if app.hasMultipleAccounts {
+                    Button { app.moveAccount(account.id, by: -1) } label: { Image(systemName: "arrow.up") }
+                        .help("Move up")
+                        .disabled(app.accounts.first?.id == account.id)
+                    Button { app.moveAccount(account.id, by: 1) } label: { Image(systemName: "arrow.down") }
+                        .help("Move down")
+                        .disabled(app.accounts.last?.id == account.id)
+                }
+                Spacer()
+                Button("Sign Out") { app.signOut(account.id) }
+                Button("Sign Out and Clear Cache…", role: .destructive) { confirmClear = account.id }
+            }
+        } header: {
+            HStack(spacing: 6) {
+                Circle().fill(account.info.color.color).frame(width: 9, height: 9)
+                Text(account.info.displayName)
+                if account.needsSignIn {
+                    Text("· needs sign-in").foregroundStyle(.orange)
+                }
             }
         }
     }
+}
+
+private struct AddAccountRequest: Identifiable {
+    let id = UUID()
+    let reauth: AccountInfo?
 }

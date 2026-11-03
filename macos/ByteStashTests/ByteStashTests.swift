@@ -195,3 +195,105 @@ final class LanguageTests: XCTestCase {
         XCTAssertEqual(Languages.canonical("JS"), "javascript")
     }
 }
+
+final class AccountTests: XCTestCase {
+    private func defaults() -> UserDefaults {
+        let name = "ByteStashTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defaults.removePersistentDomain(forName: name)
+        return defaults
+    }
+
+    func testImportsSingleAccountFromOlderVersion() {
+        let defaults = self.defaults()
+        defaults.set("https://snippets.example.com", forKey: "serverURL")
+        defaults.set("tim", forKey: "username")
+        defaults.set(3, forKey: "userID")
+        let list = AccountList.load(from: defaults)
+        XCTAssertEqual(list.count, 1)
+        // Same key as before, so the keychain token and offline cache are reused.
+        XCTAssertEqual(list.first?.id, "snippets.example.com")
+        XCTAssertEqual(list.first?.name, "Personal")
+        XCTAssertEqual(list.first?.username, "tim")
+        XCTAssertEqual(list.first?.userID, 3)
+    }
+
+    func testSavedListWinsOverLegacyKeys() {
+        let defaults = self.defaults()
+        defaults.set("https://old.example.com", forKey: "serverURL")
+        let work = AccountInfo(id: "work.example.com", server: "https://work.example.com", username: "tim", userID: 9,
+                               name: "Work", color: .orange, keepsOfflineCache: false)
+        AccountList.save([work], to: defaults)
+        XCTAssertEqual(AccountList.load(from: defaults), [work])
+        XCTAssertTrue(AccountList.load(from: self.defaults()).isEmpty)
+    }
+
+    func testDecodesAccountWithMissingFields() throws {
+        let json = #"[{"id":"a","server":"https://a.example.com"}]"#
+        let list = try JSONDecoder().decode([AccountInfo].self, from: Data(json.utf8))
+        XCTAssertEqual(list.first?.color, .blue)
+        XCTAssertEqual(list.first?.keepsOfflineCache, true)
+        XCTAssertEqual(list.first?.displayName, "a.example.com")
+    }
+
+    func testAccountKeyIncludesPortAndPath() {
+        XCTAssertEqual(AccountInfo.key(for: URL(string: "http://10.0.0.2:5000/bytestash")!), "10.0.0.2-5000_bytestash")
+    }
+
+    func testSuggestedNamesAndColors() {
+        XCTAssertEqual(AccountInfo.suggestedName(existing: []), "Personal")
+        let personal = AccountInfo(id: "p", server: "https://p", username: "", userID: 1, name: "Personal", color: .blue)
+        XCTAssertEqual(AccountInfo.suggestedName(existing: [personal]), "Work")
+        XCTAssertEqual(AccountInfo.suggestedColor(existing: [personal]), .orange)
+    }
+
+    func testTransferCopyIsAFreshPrivateSnippet() {
+        let original = Snippet(id: 7, title: "Deploy", description: "d", userID: 1, username: "tim", isPublic: true,
+                               isPinned: true, isFavorite: true, editPermission: "readonly", categories: ["ops"],
+                               fragments: [Fragment(id: 3, fileName: "a.sh", code: "echo", language: "bash", position: 0)],
+                               shares: [ShareTarget(type: "group", id: 4, name: "devs", permission: "edit")],
+                               visibility: "public")
+        let copy = original.transferCopy()
+        XCTAssertLessThan(copy.id, 0)
+        XCTAssertEqual(copy.title, "Deploy")
+        XCTAssertEqual(copy.description, "d")
+        XCTAssertEqual(copy.categories, ["ops"])
+        XCTAssertEqual(copy.fragments.map(\.code), ["echo"])
+        XCTAssertLessThan(copy.fragments[0].id, 0)
+        XCTAssertEqual(copy.visibility, "private")
+        XCTAssertFalse(copy.isPublic)
+        XCTAssertTrue(copy.shares.isEmpty)
+        XCTAssertEqual(copy.editPermission, "owner")
+        XCTAssertFalse(copy.isPinned)
+        XCTAssertFalse(copy.isFavorite)
+        XCTAssertNil(copy.userID)
+        let payload = SnippetPayload(copy, includeVisibility: true)
+        XCTAssertEqual(payload.visibility, "private")
+    }
+
+    func testMergedSortAcrossAccounts() {
+        let items = [
+            AccountSnippet(account: "work", snippet: Snippet(id: 1, title: "B", updatedAt: Date(timeIntervalSince1970: 100))),
+            AccountSnippet(account: "personal", snippet: Snippet(id: 1, title: "A", updatedAt: Date(timeIntervalSince1970: 300))),
+            AccountSnippet(account: "personal", snippet: Snippet(id: 2, title: "C", updatedAt: Date(timeIntervalSince1970: 200), isPinned: true)),
+        ]
+        let sorted = Library.sorted(items, by: .updated, query: SearchQuery(""), snippet: \.snippet)
+        XCTAssertEqual(sorted.map(\.id), [
+            SnippetRef(account: "personal", id: 2),
+            SnippetRef(account: "personal", id: 1),
+            SnippetRef(account: "work", id: 1),
+        ])
+        // Same server id on two accounts is still two different snippets.
+        XCTAssertNotEqual(items[0].id, items[1].id)
+    }
+
+    func testScope() {
+        XCTAssertTrue(AccountScope.all.includes("work"))
+        XCTAssertTrue(AccountScope.account("work").includes("work"))
+        XCTAssertFalse(AccountScope.account("work").includes("personal"))
+    }
+
+    func testGroupItemsDifferPerAccount() {
+        XCTAssertNotEqual(SidebarItem.group(4, "devs", account: "a"), SidebarItem.group(4, "devs", account: "b"))
+    }
+}

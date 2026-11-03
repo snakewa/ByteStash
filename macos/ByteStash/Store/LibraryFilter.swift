@@ -10,7 +10,8 @@ enum SidebarItem: Hashable, Codable {
     case untagged
     case category(String)
     case language(String)
-    case group(Int, String)
+    /// A group on one account's server. `account` is empty in single-account contexts.
+    case group(Int, String, account: String = "")
 
     var title: String {
         switch self {
@@ -23,7 +24,7 @@ enum SidebarItem: Hashable, Codable {
         case .untagged: return "Untagged"
         case let .category(name): return name
         case let .language(name): return Languages.displayName(for: name)
-        case let .group(_, name): return name
+        case let .group(_, name, _): return name
         }
     }
 
@@ -190,7 +191,7 @@ struct Library: Codable, Equatable {
             case .untagged: return snippet.categories.isEmpty
             case let .category(name): return snippet.categories.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
             case let .language(name): return snippet.fragments.contains { $0.language == name }
-            case let .group(id, _): return snippet.shares.contains { $0.type == "group" && $0.id == id }
+            case let .group(id, _, _): return snippet.shares.contains { $0.type == "group" && $0.id == id }
             default: return true
             }
         }
@@ -199,7 +200,13 @@ struct Library: Codable, Equatable {
     }
 
     static func sorted(_ snippets: [Snippet], by sort: SortOrder, query: SearchQuery) -> [Snippet] {
-        snippets.sorted { a, b in
+        sorted(snippets, by: sort, query: query, snippet: { $0 })
+    }
+
+    /// Sorts anything that wraps a snippet, such as snippets from several accounts.
+    static func sorted<T>(_ items: [T], by sort: SortOrder, query: SearchQuery, snippet: (T) -> Snippet) -> [T] {
+        items.sorted { x, y in
+            let a = snippet(x), b = snippet(y)
             if !query.words.isEmpty {
                 let sa = query.score(a), sb = query.score(b)
                 if sa != sb { return sa > sb }

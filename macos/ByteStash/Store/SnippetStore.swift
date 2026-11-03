@@ -14,13 +14,25 @@ final class SnippetStore: ObservableObject {
     /// Called when the server says the token is no longer valid.
     var onUnauthorized: (() -> Void)?
 
+    /// The account this store belongs to (see `AccountInfo.id`).
+    let accountID: String
+    /// Whether the snippet list is written to disk. Pending changes are always kept so
+    /// that edits made offline aren't lost.
+    var persistsLibrary = true {
+        didSet {
+            if persistsLibrary { saveLibrary() } else { try? FileManager.default.removeItem(at: libraryFile) }
+        }
+    }
+
     private var api: APIClient
     private let cacheDirectory: URL
     private var flushTask: Task<Void, Never>?
     private var pollTimer: Timer?
 
-    init(api: APIClient, accountKey: String) {
+    init(api: APIClient, accountKey: String, persistsLibrary: Bool = true) {
         self.api = api
+        self.accountID = accountKey
+        self.persistsLibrary = persistsLibrary
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         cacheDirectory = base.appendingPathComponent("ByteStash/\(accountKey)", isDirectory: true)
         try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
@@ -37,7 +49,7 @@ final class SnippetStore: ObservableObject {
     private var outboxFile: URL { cacheDirectory.appendingPathComponent("outbox.json") }
 
     private func loadFromDisk() {
-        if let data = try? Data(contentsOf: libraryFile),
+        if persistsLibrary, let data = try? Data(contentsOf: libraryFile),
            let cached = try? BSDate.decoder.decode(Library.self, from: data) {
             library = cached
         }
@@ -48,6 +60,7 @@ final class SnippetStore: ObservableObject {
     }
 
     private func saveLibrary() {
+        guard persistsLibrary else { return }
         let snapshot = library
         let file = libraryFile
         Task.detached(priority: .utility) {
@@ -160,7 +173,7 @@ final class SnippetStore: ObservableObject {
                 merged.isFavorite = local.isFavorite
                 return merged
             }
-            NotificationCenter.default.post(name: .snippetIDChanged, object: nil, userInfo: ["old": tempID, "new": created.id])
+            NotificationCenter.default.post(name: .snippetIDChanged, object: nil, userInfo: ["account": accountID, "old": tempID, "new": created.id])
         case let .update(id, payload):
             let updated = try await api.update(id: id, payload)
             // Keep the local copy if the user kept typing after this request went out.
@@ -335,6 +348,6 @@ final class SnippetStore: ObservableObject {
 }
 
 extension Notification.Name {
-    /// Posted when a snippet created offline gets its real server id. userInfo: old, new.
+    /// Posted when a snippet created offline gets its real server id. userInfo: account, old, new.
     static let snippetIDChanged = Notification.Name("ByteStashSnippetIDChanged")
 }
