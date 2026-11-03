@@ -34,6 +34,10 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: app.bytestash.mac.auth
             CFBundleURLSchemes: [bytestash]
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: app.bytestash.mac.snippets
+            UTTypeDescription: ByteStash Snippets
+            UTTypeConformsTo: [public.data]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.bytestash.mac

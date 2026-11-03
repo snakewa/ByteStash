@@ -20,13 +20,15 @@ struct SnippetListView: View {
             if layout == "grid" {
                 grid(items)
             } else {
-                List(selection: $app.selectedSnippet) {
+                // ⌘-click and ⇧-click select several snippets; ⌘A selects all.
+                List(selection: $app.selectedSnippets) {
                     ForEach(items) { item in
                         SnippetRow(snippet: item.snippet,
                                    pending: app.store(item.account)?.outbox.hasPending(for: item.snippet.id) ?? false,
                                    account: showsAccount ? app.account(item.account)?.info : nil)
                             .tag(item.id)
-                            .contextMenu { SnippetActions(item: item) }
+                            .draggable(app.dragPayload(for: item)) { DragPreview(count: app.dragPayload(for: item).refs.count, title: item.snippet.title) }
+                            .contextMenu { contextMenu(for: item) }
                     }
                 }
             }
@@ -82,11 +84,41 @@ struct SnippetListView: View {
             }
         }
         .onDeleteCommand {
-            guard let item = app.selectedItem, let store = app.store(item.account) else { return }
-            let snippet = item.snippet
-            if snippet.isRecycled { store.deleteForever(snippet) } else if store.isOwn(snippet) { store.moveToRecycleBin(snippet) }
+            let selected = app.selectedItems
+            if selected.contains(where: \.snippet.isRecycled) {
+                app.requestDeleteForever(selected)
+            } else {
+                app.recycle(selected)
+            }
         }
     }
+
+    /// Right-clicking a snippet that is part of a multiple selection acts on the whole selection.
+    @ViewBuilder
+    private func contextMenu(for item: AccountSnippet) -> some View {
+        if app.selectedSnippets.count > 1 && app.selectedSnippets.contains(item.id) {
+            BulkActions(items: app.selectedItems)
+        } else {
+            SnippetActions(item: item)
+        }
+    }
+
+    /// Grid clicks: plain click selects one, ⌘-click adds or removes, ⇧-click selects a range.
+    private func click(_ item: AccountSnippet, in items: [AccountSnippet]) {
+        let flags = NSEvent.modifierFlags
+        if flags.contains(.command) {
+            if app.selectedSnippets.contains(item.id) { app.selectedSnippets.remove(item.id) } else { app.selectedSnippets.insert(item.id) }
+            anchor = item.id
+        } else if flags.contains(.shift), let anchor, let from = items.firstIndex(where: { $0.id == anchor }),
+                  let to = items.firstIndex(where: { $0.id == item.id }) {
+            app.selectedSnippets = Set(items[min(from, to)...max(from, to)].map(\.id))
+        } else {
+            app.selectedSnippet = item.id
+            anchor = item.id
+        }
+    }
+
+    @State private var anchor: SnippetRef?
 
     private func subtitle(count: Int) -> String {
         let base = "\(count) snippet\(count == 1 ? "" : "s")"
@@ -101,11 +133,12 @@ struct SnippetListView: View {
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 210, maximum: 340), spacing: 12)], spacing: 12) {
                     ForEach(items) { item in
-                        SnippetCard(snippet: item.snippet, selected: app.selectedSnippet == item.id, dark: colorScheme == .dark,
+                        SnippetCard(snippet: item.snippet, selected: app.selectedSnippets.contains(item.id), dark: colorScheme == .dark,
                                     account: showsAccount ? app.account(item.account)?.info : nil)
                             .id(item.id)
-                            .onTapGesture { app.selectedSnippet = item.id }
-                            .contextMenu { SnippetActions(item: item) }
+                            .onTapGesture { click(item, in: items) }
+                            .draggable(app.dragPayload(for: item)) { DragPreview(count: app.dragPayload(for: item).refs.count, title: item.snippet.title) }
+                            .contextMenu { contextMenu(for: item) }
                     }
                 }
                 .padding(12)
@@ -117,10 +150,16 @@ struct SnippetListView: View {
         .focusable()
         .onMoveCommand { direction in
             guard !items.isEmpty else { return }
-            let index = items.firstIndex { $0.id == app.selectedSnippet } ?? -1
+            let index = items.firstIndex { app.selectedSnippets.contains($0.id) } ?? -1
             let step = (direction == .left || direction == .up) ? -1 : 1
             let next = min(max(index + step, 0), items.count - 1)
             app.selectedSnippet = items[next].id
+            anchor = items[next].id
+        }
+        .onKeyPress(characters: CharacterSet(charactersIn: "a"), phases: .down) { press in
+            guard press.modifiers.contains(.command) else { return .ignored }
+            app.selectedSnippets = Set(items.map(\.id))
+            return .handled
         }
     }
 
@@ -257,6 +296,67 @@ struct SnippetActions: View {
                 Button("Move to Recycle Bin", role: .destructive) { store.moveToRecycleBin(snippet) }
             }
         }
+    }
+}
+
+/// Actions for several selected snippets, in context menus and the bulk selection pane.
+struct BulkActions: View {
+    @EnvironmentObject private var app: AppState
+    let items: [AccountSnippet]
+
+    var body: some View {
+        let recycled = items.filter(\.snippet.isRecycled)
+        let live = items.filter { !$0.snippet.isRecycled }
+        Button("Copy Code of \(items.count) Snippets") { app.copyCode(items) }
+        Divider()
+        if !live.isEmpty {
+            let allPinned = live.allSatisfy(\.snippet.isPinned)
+            let allFavorite = live.allSatisfy(\.snippet.isFavorite)
+            Button(allPinned ? "Unpin" : "Pin") { app.setPinned(live, !allPinned) }
+            Button(allFavorite ? "Remove from Favorites" : "Add to Favorites") { app.setFavorite(live, !allFavorite) }
+            let tags = app.categoryCounts.map(\.name)
+            if !tags.isEmpty {
+                Menu("Add Tag") {
+                    ForEach(tags, id: \.self) { tag in
+                        Button(tag) { app.addTag(tag, to: live) }
+                    }
+                }
+            }
+            if app.hasMultipleAccounts {
+                Menu("Copy to") {
+                    ForEach(app.accounts) { account in
+                        Button(account.info.displayName + "…") { app.requestTransfer(live, to: account.id, move: false) }
+                            .disabled(!live.contains { $0.account != account.id })
+                    }
+                }
+                Menu("Move to") {
+                    ForEach(app.accounts) { account in
+                        Button(account.info.displayName + "…") { app.requestTransfer(live, to: account.id, move: true) }
+                            .disabled(!live.contains { $0.account != account.id })
+                    }
+                }
+            }
+            Divider()
+            Button("Move to Recycle Bin", role: .destructive) { app.recycle(live) }
+                .disabled(!live.contains { app.canMove($0) })
+        }
+        if !recycled.isEmpty {
+            Button("Restore") { app.restore(recycled) }
+            Button("Delete Forever…", role: .destructive) { app.requestDeleteForever(recycled) }
+        }
+    }
+}
+
+/// What follows the pointer while dragging.
+struct DragPreview: View {
+    let count: Int
+    let title: String
+
+    var body: some View {
+        Label(count > 1 ? "\(count) snippets" : (title.isEmpty ? "Untitled" : title), systemImage: count > 1 ? "square.stack" : "curlybraces")
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.regularMaterial, in: Capsule())
     }
 }
 

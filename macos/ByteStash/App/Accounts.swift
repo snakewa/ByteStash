@@ -1,5 +1,7 @@
 import Combine
+import CoreTransferable
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A color that marks which account a snippet belongs to.
 enum AccountColor: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -161,12 +163,13 @@ enum AccountScope: Hashable, Codable {
 }
 
 /// A copy or move of a snippet to another account, waiting for the user to confirm it.
+/// A copy or move of one or more snippets to another account, waiting for the user to
+/// confirm it. With `move`, snippets you own are moved and the rest are copied.
 struct SnippetTransfer: Identifiable, Equatable {
-    let source: SnippetRef
+    let sources: [SnippetRef]
     let target: String
     let move: Bool
-
-    var id: String { "\(source.account)-\(source.id)-\(target)-\(move)" }
+    let id = UUID()
 }
 
 extension Snippet {
@@ -205,5 +208,22 @@ struct AccountBadge: View {
         .font(.caption2)
         .foregroundStyle(.secondary)
         .help("\(info.displayName) · \(info.username) on \(info.serverURL?.host ?? info.server)")
+    }
+}
+
+extension UTType {
+    /// Snippets dragged inside the app (declared in Info.plist).
+    static let byteStashSnippets = UTType(exportedAs: "app.bytestash.mac.snippets")
+}
+
+/// What a dragged snippet (or selection) carries: references for drops inside the app, and
+/// the code as plain text for drops into other apps.
+struct SnippetDrag: Codable, Transferable {
+    var refs: [SnippetRef]
+    var text: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .byteStashSnippets)
+        ProxyRepresentation(exporting: \.text)
     }
 }

@@ -19,7 +19,9 @@ final class AppState: ObservableObject {
         didSet { saveScope() }
     }
     @Published var selection: SidebarItem? = .all
-    @Published var selectedSnippet: SnippetRef?
+    /// The selected snippets in the list. One selected snippet opens in the editor; several
+    /// show the bulk actions instead.
+    @Published var selectedSnippets: Set<SnippetRef> = []
     @Published var searchText = ""
 
     /// Shows the "Add Account" sheet; `reauthAccount` prefills it to sign in again.
@@ -27,6 +29,14 @@ final class AppState: ObservableObject {
     @Published private(set) var reauthAccount: AccountInfo?
     /// A copy or move to another account that is waiting for confirmation.
     @Published var pendingTransfer: SnippetTransfer?
+    /// Snippets waiting for "Delete Forever" to be confirmed.
+    @Published var pendingDelete: [SnippetRef]?
+
+    /// The single selected snippet, or nil when none or several are selected.
+    var selectedSnippet: SnippetRef? {
+        get { selectedSnippets.count == 1 ? selectedSnippets.first : nil }
+        set { selectedSnippets = newValue.map { [$0] } ?? [] }
+    }
 
     /// Snippets copied or opened most recently, across accounts.
     @Published private(set) var recent: [SnippetRef] = []
@@ -47,7 +57,7 @@ final class AppState: ObservableObject {
                       let new = note.userInfo?["new"] as? Int else { return }
                 let oldRef = SnippetRef(account: account, id: old)
                 let newRef = SnippetRef(account: account, id: new)
-                if self.selectedSnippet == oldRef { self.selectedSnippet = newRef }
+                if self.selectedSnippets.remove(oldRef) != nil { self.selectedSnippets.insert(newRef) }
                 if let index = self.recent.firstIndex(of: oldRef) {
                     self.recent[index] = newRef
                     self.saveRecent()
@@ -294,7 +304,7 @@ final class AppState: ObservableObject {
         accountCancellables[accountID] = nil
         accounts.removeAll { $0.id == accountID }
         persistAccounts()
-        if selectedSnippet?.account == accountID { selectedSnippet = nil }
+        selectedSnippets = selectedSnippets.filter { $0.account != accountID }
         if scope == .account(accountID) { scope = .all }
         if case let .group(_, _, owner) = selection, owner == accountID { selection = .all }
         recent.removeAll { $0.account == accountID }
@@ -318,6 +328,12 @@ final class AppState: ObservableObject {
     }
 
     var selectedItem: AccountSnippet? { selectedSnippet.flatMap { self.item($0) } }
+
+    /// Every selected snippet that still exists, newest first.
+    var selectedItems: [AccountSnippet] {
+        let items = selectedSnippets.compactMap { self.item($0) }
+        return Library.sorted(items, by: .updated, query: SearchQuery(""), snippet: \.snippet)
+    }
 
     /// The sidebar item's snippets from every account in scope, sorted together.
     func snippets(for item: SidebarItem, query: SearchQuery, sort: SortOrder) -> [AccountSnippet] {
@@ -426,10 +442,17 @@ final class AppState: ObservableObject {
 
     // MARK: Copy and move between accounts
 
-    /// Asks for confirmation; `performTransfer` runs once the user agrees.
+    /// Asks for confirmation; `performTransfer` runs once the user agrees. Snippets that are
+    /// already on `target` are left out.
+    func requestTransfer(_ items: [AccountSnippet], to target: String, move: Bool) {
+        guard account(target) != nil else { return }
+        let sources = items.filter { $0.account != target && !$0.snippet.isRecycled }.map(\.id)
+        guard !sources.isEmpty else { return }
+        pendingTransfer = SnippetTransfer(sources: sources, target: target, move: move)
+    }
+
     func requestTransfer(_ item: AccountSnippet, to target: String, move: Bool) {
-        guard item.account != target, account(target) != nil else { return }
-        pendingTransfer = SnippetTransfer(source: item.id, target: target, move: move && canMove(item))
+        requestTransfer([item], to: target, move: move)
     }
 
     /// Only snippets you own can be moved; someone else's can only be copied.
@@ -440,16 +463,136 @@ final class AppState: ObservableObject {
 
     func performTransfer(_ transfer: SnippetTransfer) {
         pendingTransfer = nil
-        guard let source = store(transfer.source.account),
-              let snippet = source.library.snippet(id: transfer.source.id),
-              let target = store(transfer.target) else { return }
-        let created = target.create(from: snippet.transferCopy())
-        if transfer.move, source.isOwn(snippet) {
-            source.moveToRecycleBin(snippet)
+        guard let target = store(transfer.target) else { return }
+        var created: Set<SnippetRef> = []
+        for ref in transfer.sources {
+            guard let source = store(ref.account), let snippet = source.library.snippet(id: ref.id) else { continue }
+            let copy = target.create(from: snippet.transferCopy())
+            created.insert(SnippetRef(account: transfer.target, id: copy.id))
+            if transfer.move, source.isOwn(snippet) {
+                source.moveToRecycleBin(snippet)
+            }
         }
         if !scope.includes(transfer.target) { scope = .all }
         selection = .all
         searchText = ""
-        selectedSnippet = SnippetRef(account: transfer.target, id: created.id)
+        selectedSnippets = created
+    }
+
+    // MARK: Bulk actions
+
+    func copyCode(_ items: [AccountSnippet]) {
+        for item in items { markUsed(item) }
+        Clipboard.copy(items.compactMap { $0.snippet.fragments.first?.code }.joined(separator: "\n\n"))
+    }
+
+    /// Adds `tag` to every snippet you can edit. With `replace`, it becomes the only tag.
+    func addTag(_ tag: String, to items: [AccountSnippet], replace: Bool = false) {
+        let tag = tag.trimmingCharacters(in: .whitespaces)
+        guard !tag.isEmpty else { return }
+        for item in items {
+            guard let store = self.store(item.account), store.canEdit(item.snippet) else { continue }
+            var snippet = item.snippet
+            if replace {
+                snippet.categories = [tag]
+            } else if !snippet.categories.contains(where: { $0.caseInsensitiveCompare(tag) == .orderedSame }) {
+                snippet.categories.append(tag)
+            } else {
+                continue
+            }
+            store.save(snippet)
+        }
+    }
+
+    func setPinned(_ items: [AccountSnippet], _ value: Bool) {
+        for item in items {
+            guard let store = self.store(item.account), store.isOwn(item.snippet), item.snippet.isPinned != value else { continue }
+            store.setPinned(item.snippet, value)
+        }
+    }
+
+    func setFavorite(_ items: [AccountSnippet], _ value: Bool) {
+        for item in items {
+            guard let store = self.store(item.account), store.isOwn(item.snippet), item.snippet.isFavorite != value else { continue }
+            store.setFavorite(item.snippet, value)
+        }
+    }
+
+    /// Moves the ones you own to their account's Recycle Bin.
+    func recycle(_ items: [AccountSnippet]) {
+        for item in items {
+            guard let store = self.store(item.account), store.isOwn(item.snippet), !item.snippet.isRecycled else { continue }
+            store.moveToRecycleBin(item.snippet)
+        }
+        selectedSnippets.subtract(items.map(\.id))
+    }
+
+    func restore(_ items: [AccountSnippet]) {
+        for item in items where item.snippet.isRecycled {
+            store(item.account)?.restore(item.snippet)
+        }
+    }
+
+    func requestDeleteForever(_ items: [AccountSnippet]) {
+        let refs = items.filter(\.snippet.isRecycled).map(\.id)
+        if !refs.isEmpty { pendingDelete = refs }
+    }
+
+    func performDeleteForever(_ refs: [SnippetRef]) {
+        pendingDelete = nil
+        for ref in refs {
+            guard let store = self.store(ref.account), let snippet = store.library.snippet(id: ref.id), snippet.isRecycled else { continue }
+            store.deleteForever(snippet)
+        }
+        selectedSnippets.subtract(refs)
+    }
+
+    // MARK: Drag and drop
+
+    /// The snippets a drag starting on `item` carries: the whole selection when the item is
+    /// part of it, else just the item.
+    func dragPayload(for item: AccountSnippet) -> SnippetDrag {
+        let items = selectedSnippets.contains(item.id) && selectedSnippets.count > 1 ? selectedItems : [item]
+        return SnippetDrag(refs: items.map(\.id),
+                           text: items.compactMap { $0.snippet.fragments.first?.code }.joined(separator: "\n\n"))
+    }
+
+    /// Handles snippets dropped on a sidebar row. Returns false when the row doesn't accept them.
+    ///
+    /// - On another account: copy, or move with ⌘ held. Both ask for confirmation first.
+    /// - On a tag: add the tag; with ⌥ held, replace the snippet's tags with it.
+    /// - On Pinned or Favorites: pin or favorite. On the Recycle Bin: move there.
+    @discardableResult
+    func drop(_ refs: [SnippetRef], on target: SidebarDropTarget, modifiers: NSEvent.ModifierFlags) -> Bool {
+        let items = refs.compactMap { self.item($0) }
+        guard !items.isEmpty else { return false }
+        switch target {
+        case let .account(id):
+            guard items.contains(where: { $0.account != id }) else { return false }
+            requestTransfer(items, to: id, move: modifiers.contains(.command))
+        case let .item(item):
+            switch item {
+            case let .category(name): addTag(name, to: items, replace: modifiers.contains(.option))
+            case .pinned: setPinned(items, true)
+            case .favorites: setFavorite(items, true)
+            case .recycled: recycle(items)
+            default: return false
+            }
+        }
+        return true
+    }
+}
+
+/// Where snippets can be dropped in the sidebar.
+enum SidebarDropTarget: Hashable {
+    case account(String)
+    case item(SidebarItem)
+
+    /// Sidebar items that accept dropped snippets.
+    static func accepts(_ item: SidebarItem) -> Bool {
+        switch item {
+        case .category, .pinned, .favorites, .recycled: return true
+        default: return false
+        }
     }
 }

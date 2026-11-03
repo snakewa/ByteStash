@@ -45,6 +45,11 @@ Requires macOS 14 Sonoma or later. Universal (Apple silicon and Intel).
 - Pin, favorite, duplicate, private/public, share links (with expiry and sign-in
   requirement), open in browser, recycle bin with restore.
 
+- **Multiple selection**: ⌘-click, ⇧-click or ⌘A in the list or grid. With several snippets
+  selected, copy their code, pin, favorite, tag, copy or move them to another account, or
+  move them to the Recycle Bin at once (right-click, the Snippet menu, or the pane on the right).
+- **Drag and drop** onto the sidebar: a tag adds it (hold ⌥ to replace the tags), Pinned and
+  Favorites pin or favorite, the Recycle Bin deletes. Dragging into another app drops the code.
 - **Sharing** (Share → Sharing…): private, public, or shared with groups and people,
   each with Can view or Can edit, plus Lock editing. Groups you belong to appear under
   Shared in the sidebar.
@@ -63,6 +68,9 @@ Requires macOS 14 Sonoma or later. Universal (Apple silicon and Intel).
     Recycle Bin. Snippets other people own can be copied, not moved.
   - Per account you can set a name, a color, and turn off **Keep an offline copy on this
     Mac** (for example when work snippets must not be stored on a personal laptop).
+  - **Drag and drop**: drag snippets onto an account in the sidebar's Accounts section to
+    copy them there; hold ⌘ while dropping to move them instead (like dragging files to
+    another disk in Finder). Both ask for confirmation first.
   - An expired session only affects that account: its cached snippets stay visible and the
     sidebar footer offers "Sign in again".
 
@@ -134,6 +142,10 @@ ByteStashTests/ model, search, outbox, account and language tests
 - **存選取文字**：任何 App 選好文字按 ⇧⌥⌘C 存成片段。自動貼上和這個功能需要開「輔助使用」權限。
 - **分享**：私人、公開，或指定群組和人（可檢視／可編輯），也可以鎖定編輯。側欄「共享」下會列出你的群組。
 - **離線**：所有片段都快取在本機，離線時的修改會排隊，連線後依序同步。
+- **多選**：⌘點擊、⇧點擊或 ⌘A。選了多個片段之後可以一次複製程式碼、置頂、加入最愛、加標籤、
+  複製或移動到其他帳號、丟進回收筒。
+- **拖拉到側欄**：拖到標籤是加上這個標籤（按住 ⌥ 是取代原本的標籤），拖到置頂、最愛就加入，
+  拖到回收筒就刪除；拖到其他 App 會放入程式碼。
 - **多帳號**（設定 → 帳號 → Add Account…）：例如個人和公司各一台伺服器。每個帳號各自有 token、
   離線快取和待同步的修改，兩台伺服器之間不會自動同步。
   - 側欄上方的 **All · Personal · Work** 可以看全部（融合）或只看一個帳號；融合模式下每個片段都有帳號顏色標籤，
@@ -142,4 +154,5 @@ ByteStashTests/ model, search, outbox, account and language tests
     按住 New 按鈕可以選其他帳號。
   - **Copy to / Move to**（右鍵或 Snippet 選單）：確認後在另一台伺服器建立一份私人片段。
     標籤和檔案會帶過去，分享設定、置頂和最愛不會；Move 會把原本那份放進回收筒。別人的片段只能複製。
+  - **拖拉**：把片段拖到側欄「Accounts」裡的帳號是複製，放手時按住 ⌘ 是移動，兩種都會先確認。
   - 每個帳號可以改名字、顏色，也可以關掉「在這台 Mac 保留離線副本」。

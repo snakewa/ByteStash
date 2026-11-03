@@ -4,14 +4,7 @@ struct SidebarView: View {
     @EnvironmentObject private var app: AppState
 
     var body: some View {
-        VStack(spacing: 0) {
-            if app.hasMultipleAccounts {
-                AccountScopePicker()
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-            }
-            list
-        }
+        list
         .safeAreaInset(edge: .bottom) { SyncStatusBar() }
         .confirmationDialog(emptyTitle, isPresented: Binding(
             get: { confirmEmpty != nil },
@@ -30,6 +23,29 @@ struct SidebarView: View {
 
     private var list: some View {
         List(selection: $app.selection) {
+            if app.hasMultipleAccounts {
+                // Click to show one account or all of them. Drop snippets on an account to
+                // copy them there (hold ⌘ to move).
+                Section("Accounts") {
+                    AccountRow(title: "All Accounts", color: nil, count: allCount, current: app.scope == .all) {
+                        app.scope = .all
+                    }
+                    ForEach(app.accounts) { account in
+                        AccountRow(title: account.info.displayName, color: account.info.color.color,
+                                   count: account.store.library.own.count, current: app.scope == .account(account.id),
+                                   targeted: dropTarget == .account(account.id)) {
+                            app.scope = .account(account.id)
+                        }
+                        .help("\(account.info.username) on \(account.info.serverURL?.host ?? account.info.server). Drop snippets here to copy them; hold ⌘ to move.")
+                        .dropDestination(for: SnippetDrag.self) { drops, _ in
+                            app.drop(drops.flatMap(\.refs), on: .account(account.id), modifiers: NSEvent.modifierFlags)
+                        } isTargeted: { over in
+                            dropTarget = over ? .account(account.id) : (dropTarget == .account(account.id) ? nil : dropTarget)
+                        }
+                    }
+                }
+            }
+
             Section("Library") {
                 row(.all)
                 row(.pinned)
@@ -89,6 +105,10 @@ struct SidebarView: View {
 
     /// The account whose Recycle Bin is about to be emptied.
     @State private var confirmEmpty: String?
+    /// The row snippets are being dragged over.
+    @State private var dropTarget: SidebarDropTarget?
+
+    private var allCount: Int { app.accounts.reduce(0) { $0 + $1.store.library.own.count } }
 
     private var emptyTitle: String {
         guard app.hasMultipleAccounts, let id = confirmEmpty, let account = app.account(id) else {
@@ -97,8 +117,9 @@ struct SidebarView: View {
         return "Delete all snippets in \(account.info.displayName)'s Recycle Bin?"
     }
 
+    @ViewBuilder
     private func row(_ item: SidebarItem, count: Int? = nil, account: AccountInfo? = nil) -> some View {
-        HStack(spacing: 6) {
+        let base = HStack(spacing: 6) {
             Label(item.title, systemImage: item.systemImage)
             if let account, app.hasMultipleAccounts, app.scope == .all {
                 Spacer(minLength: 0)
@@ -107,23 +128,59 @@ struct SidebarView: View {
         }
         .badge(count ?? app.count(item))
         .tag(item)
+        if SidebarDropTarget.accepts(item) {
+            let target = SidebarDropTarget.item(item)
+            base
+                .listRowBackground(dropTarget == target ? Color.accentColor.opacity(0.25) : nil)
+                .dropDestination(for: SnippetDrag.self) { drops, _ in
+                    app.drop(drops.flatMap(\.refs), on: target, modifiers: NSEvent.modifierFlags)
+                } isTargeted: { over in
+                    dropTarget = over ? target : (dropTarget == target ? nil : dropTarget)
+                }
+                .help(dropHelp(item))
+        } else {
+            base
+        }
+    }
+
+    private func dropHelp(_ item: SidebarItem) -> String {
+        switch item {
+        case .category: return "Drop snippets here to add this tag (hold ⌥ to replace their tags)"
+        case .pinned: return "Drop snippets here to pin them"
+        case .favorites: return "Drop snippets here to add them to Favorites"
+        case .recycled: return "Drop snippets here to move them to the Recycle Bin"
+        default: return ""
+        }
     }
 }
 
-/// "All · Personal · Work": which accounts the window shows.
-struct AccountScopePicker: View {
-    @EnvironmentObject private var app: AppState
+/// An account in the sidebar: click to show it, drop snippets on it to copy them there.
+private struct AccountRow: View {
+    let title: String
+    let color: Color?
+    let count: Int
+    let current: Bool
+    var targeted = false
+    let action: () -> Void
 
     var body: some View {
-        Picker("Accounts", selection: $app.scope) {
-            Text("All").tag(AccountScope.all)
-            ForEach(app.accounts) { account in
-                Text(account.info.displayName).tag(AccountScope.account(account.id))
+        HStack(spacing: 8) {
+            if let color {
+                Circle().fill(color).frame(width: 10, height: 10)
+                    .frame(width: 18)
+            } else {
+                Image(systemName: "square.stack.3d.up").frame(width: 18)
             }
+            Text(title).fontWeight(current ? .semibold : .regular)
+            Spacer(minLength: 4)
+            if current {
+                Image(systemName: "checkmark").font(.caption.weight(.semibold)).foregroundStyle(Color.accentColor)
+            }
+            Text("\(count)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .help("Show all accounts together, or one account")
+        .contentShape(Rectangle())
+        .onTapGesture(perform: action)
+        .listRowBackground(targeted ? Color.accentColor.opacity(0.25) : nil)
     }
 }
 
