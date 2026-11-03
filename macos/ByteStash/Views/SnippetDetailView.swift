@@ -8,6 +8,8 @@ struct SnippetDetailView: View {
     @EnvironmentObject private var store: SnippetStore
 
     let snippet: Snippet
+    /// The account the snippet lives on.
+    let account: AccountInfo
 
     @State private var draft: Snippet
     @State private var dirty = false
@@ -24,8 +26,9 @@ struct SnippetDetailView: View {
     @AppStorage(EditorSettings.lightThemeKey) private var lightTheme = EditorSettings.defaultLightTheme
     @AppStorage(EditorSettings.darkThemeKey) private var darkTheme = EditorSettings.defaultDarkTheme
 
-    init(snippet: Snippet) {
+    init(snippet: Snippet, account: AccountInfo) {
         self.snippet = snippet
+        self.account = account
         _draft = State(initialValue: snippet)
     }
 
@@ -117,6 +120,9 @@ struct SnippetDetailView: View {
             HStack(spacing: 10) {
                 TagEditor(tags: $draft.categories, editable: editable)
                 Spacer()
+                if app.hasMultipleAccounts {
+                    AccountBadge(info: account)
+                }
                 if let owner = snippet.username, !own {
                     Label(owner, systemImage: "person")
                         .font(.caption)
@@ -284,7 +290,7 @@ struct SnippetDetailView: View {
                 }
 
                 Menu {
-                    SnippetActions(snippet: snippet)
+                    SnippetActions(item: AccountSnippet(account: account.id, snippet: snippet))
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
                 }

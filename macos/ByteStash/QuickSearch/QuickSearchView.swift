@@ -11,17 +11,16 @@ struct QuickSearchView: View {
     @State private var flash: String?
     @FocusState private var focused: Bool
 
-    private var results: [Snippet] {
-        guard let store = app.store else { return [] }
+    private var results: [AccountSnippet] {
         let search = SearchQuery(query)
-        let pool = store.library.everything
+        let pool = app.everything
         if search.isEmpty {
-            let recent = store.library.recentSnippets
+            let recent = app.recentItems
             let recentIDs = Set(recent.map(\.id))
-            let rest = Library.sorted(pool.filter { !recentIDs.contains($0.id) }, by: .updated, query: search)
+            let rest = Library.sorted(pool.filter { !recentIDs.contains($0.id) }, by: .updated, query: search, snippet: \.snippet)
             return Array((recent + rest).prefix(30))
         }
-        return Array(Library.sorted(pool.filter(search.matches), by: .updated, query: search).prefix(50))
+        return Array(Library.sorted(pool.filter { search.matches($0.snippet) }, by: .updated, query: search, snippet: \.snippet).prefix(50))
     }
 
     var body: some View {
@@ -56,11 +55,12 @@ struct QuickSearchView: View {
 
             HStack(spacing: 0) {
                 ScrollViewReader { proxy in
-                    List(Array(items.enumerated()), id: \.element.id) { index, snippet in
-                        QuickSearchRow(snippet: snippet, selected: index == selected)
-                            .id(snippet.id)
+                    List(Array(items.enumerated()), id: \.element.id) { index, item in
+                        QuickSearchRow(snippet: item.snippet, selected: index == selected,
+                                       account: app.hasMultipleAccounts ? app.account(item.account)?.info : nil)
+                            .id(item.id)
                             .contentShape(Rectangle())
-                            .onTapGesture(count: 2) { copy(snippet) }
+                            .onTapGesture(count: 2) { copy(item) }
                             .onTapGesture { selected = index; fragmentIndex = 0 }
                             .listRowBackground(index == selected ? Color.accentColor.opacity(0.25) : Color.clear)
                     }
@@ -75,11 +75,11 @@ struct QuickSearchView: View {
                 Divider()
 
                 if let current {
-                    QuickPreview(snippet: current, fragmentIndex: fragmentIndex)
+                    QuickPreview(snippet: current.snippet, fragmentIndex: fragmentIndex)
                 } else {
                     VStack {
                         Spacer()
-                        Text(app.store?.library.own.isEmpty == false ? "No matches" : "No snippets yet")
+                        Text(app.everything.isEmpty ? "No snippets yet" : "No matches")
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
@@ -128,14 +128,15 @@ struct QuickSearchView: View {
         fragmentIndex = 0
     }
 
-    private func cycleFragment(_ snippet: Snippet?) {
-        guard let snippet, snippet.fragments.count > 1 else { return }
+    private func cycleFragment(_ item: AccountSnippet?) {
+        guard let snippet = item?.snippet, snippet.fragments.count > 1 else { return }
         fragmentIndex = (fragmentIndex + 1) % snippet.fragments.count
     }
 
-    private func copy(_ snippet: Snippet?) {
-        guard let snippet, snippet.fragments.indices.contains(fragmentIndex) else { return }
-        app.store?.markUsed(snippet)
+    private func copy(_ item: AccountSnippet?) {
+        guard let item, item.snippet.fragments.indices.contains(fragmentIndex) else { return }
+        let snippet = item.snippet
+        app.markUsed(item)
         let code = snippet.fragments[fragmentIndex].code
         if Paster.autoPasteEnabled {
             // The panel never activates ByteStash, so the app underneath gets the paste.
@@ -148,17 +149,18 @@ struct QuickSearchView: View {
         }
     }
 
-    private func open(_ snippet: Snippet?) {
-        guard let snippet else { return }
+    private func open(_ item: AccountSnippet?) {
+        guard let item else { return }
         dismiss()
-        app.store?.markUsed(snippet)
-        app.reveal(snippet.id)
+        app.markUsed(item)
+        app.reveal(item.id)
     }
 }
 
 private struct QuickSearchRow: View {
     let snippet: Snippet
     let selected: Bool
+    var account: AccountInfo?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -170,6 +172,10 @@ private struct QuickSearchRow: View {
                 Text(Languages.displayName(for: snippet.primaryLanguage))
                 if !snippet.categories.isEmpty {
                     Text(snippet.categories.map { "#\($0)" }.joined(separator: " ")).lineLimit(1)
+                }
+                if let account {
+                    Spacer(minLength: 4)
+                    AccountBadge(info: account)
                 }
             }
             .font(.caption)

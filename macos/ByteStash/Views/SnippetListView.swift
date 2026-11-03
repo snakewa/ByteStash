@@ -3,14 +3,16 @@ import SwiftUI
 
 struct SnippetListView: View {
     @EnvironmentObject private var app: AppState
-    @EnvironmentObject private var store: SnippetStore
     @AppStorage("sortOrder") private var sort: SortOrder = .updated
     @AppStorage("listLayout") private var layout = "list"
     @Environment(\.colorScheme) private var colorScheme
 
-    private var snippets: [Snippet] {
-        store.library.snippets(for: app.selection ?? .all, query: SearchQuery(app.searchText), sort: sort)
+    private var snippets: [AccountSnippet] {
+        app.snippets(for: app.selection ?? .all, query: SearchQuery(app.searchText), sort: sort)
     }
+
+    /// Account badges only help when the list mixes accounts.
+    private var showsAccount: Bool { app.hasMultipleAccounts && app.scope == .all }
 
     var body: some View {
         let items = snippets
@@ -18,11 +20,13 @@ struct SnippetListView: View {
             if layout == "grid" {
                 grid(items)
             } else {
-                List(selection: $app.selectedSnippetID) {
-                    ForEach(items) { snippet in
-                        SnippetRow(snippet: snippet, pending: store.outbox.hasPending(for: snippet.id))
-                            .tag(snippet.id)
-                            .contextMenu { SnippetActions(snippet: snippet) }
+                List(selection: $app.selectedSnippet) {
+                    ForEach(items) { item in
+                        SnippetRow(snippet: item.snippet,
+                                   pending: app.store(item.account)?.outbox.hasPending(for: item.snippet.id) ?? false,
+                                   account: showsAccount ? app.account(item.account)?.info : nil)
+                            .tag(item.id)
+                            .contextMenu { SnippetActions(item: item) }
                     }
                 }
             }
@@ -38,7 +42,7 @@ struct SnippetListView: View {
         }
         .searchable(text: $app.searchText, prompt: "Search  #tag  lang:swift")
         .navigationTitle((app.selection ?? .all).title)
-        .navigationSubtitle("\(items.count) snippet\(items.count == 1 ? "" : "s")")
+        .navigationSubtitle(subtitle(count: items.count))
         .toolbar {
             ToolbarItemGroup {
                 Picker("Layout", selection: $layout) {
@@ -55,44 +59,68 @@ struct SnippetListView: View {
                 } label: {
                     Label("Sort", systemImage: "arrow.up.arrow.down")
                 }
-                Button {
-                    app.newSnippet()
-                } label: {
-                    Label("New Snippet", systemImage: "square.and.pencil")
+                if app.hasMultipleAccounts && app.scope == .all {
+                    // In the merged view the user picks where the new snippet goes.
+                    Menu {
+                        ForEach(app.accounts) { account in
+                            Button("New in \(account.info.displayName)") { app.newSnippet(in: account.id) }
+                        }
+                    } label: {
+                        Label("New Snippet", systemImage: "square.and.pencil")
+                    } primaryAction: {
+                        app.newSnippet()
+                    }
+                    .help("New Snippet in \(app.defaultAccount?.info.displayName ?? "the default account") (⌘N). Hold to choose another account.")
+                } else {
+                    Button {
+                        app.newSnippet()
+                    } label: {
+                        Label("New Snippet", systemImage: "square.and.pencil")
+                    }
+                    .help("New Snippet (⌘N)")
                 }
-                .help("New Snippet (⌘N)")
             }
         }
         .onDeleteCommand {
-            guard let id = app.selectedSnippetID, let snippet = store.library.snippet(id: id) else { return }
+            guard let item = app.selectedItem, let store = app.store(item.account) else { return }
+            let snippet = item.snippet
             if snippet.isRecycled { store.deleteForever(snippet) } else if store.isOwn(snippet) { store.moveToRecycleBin(snippet) }
         }
     }
 
-    private func grid(_ items: [Snippet]) -> some View {
+    private func subtitle(count: Int) -> String {
+        let base = "\(count) snippet\(count == 1 ? "" : "s")"
+        if app.hasMultipleAccounts, case let .account(id) = app.scope, let account = app.account(id) {
+            return "\(account.info.displayName) · \(base)"
+        }
+        return base
+    }
+
+    private func grid(_ items: [AccountSnippet]) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 210, maximum: 340), spacing: 12)], spacing: 12) {
-                    ForEach(items) { snippet in
-                        SnippetCard(snippet: snippet, selected: app.selectedSnippetID == snippet.id, dark: colorScheme == .dark)
-                            .id(snippet.id)
-                            .onTapGesture { app.selectedSnippetID = snippet.id }
-                            .contextMenu { SnippetActions(snippet: snippet) }
+                    ForEach(items) { item in
+                        SnippetCard(snippet: item.snippet, selected: app.selectedSnippet == item.id, dark: colorScheme == .dark,
+                                    account: showsAccount ? app.account(item.account)?.info : nil)
+                            .id(item.id)
+                            .onTapGesture { app.selectedSnippet = item.id }
+                            .contextMenu { SnippetActions(item: item) }
                     }
                 }
                 .padding(12)
             }
-            .onChange(of: app.selectedSnippetID) { _, id in
-                if let id { withAnimation { proxy.scrollTo(id) } }
+            .onChange(of: app.selectedSnippet) { _, ref in
+                if let ref { withAnimation { proxy.scrollTo(ref) } }
             }
         }
         .focusable()
         .onMoveCommand { direction in
             guard !items.isEmpty else { return }
-            let index = items.firstIndex { $0.id == app.selectedSnippetID } ?? -1
+            let index = items.firstIndex { $0.id == app.selectedSnippet } ?? -1
             let step = (direction == .left || direction == .up) ? -1 : 1
             let next = min(max(index + step, 0), items.count - 1)
-            app.selectedSnippetID = items[next].id
+            app.selectedSnippet = items[next].id
         }
     }
 
@@ -109,6 +137,8 @@ struct SnippetListView: View {
 struct SnippetRow: View {
     let snippet: Snippet
     var pending = false
+    /// Shown as a colored badge when the list mixes accounts.
+    var account: AccountInfo?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -152,6 +182,9 @@ struct SnippetRow: View {
                     Text(owner).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
                 Spacer()
+                if let account {
+                    AccountBadge(info: account)
+                }
                 Text(snippet.updatedAt, format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
@@ -164,11 +197,22 @@ struct SnippetRow: View {
 /// Shared actions for context menus and the detail toolbar.
 struct SnippetActions: View {
     @EnvironmentObject private var app: AppState
-    @EnvironmentObject private var store: SnippetStore
-    let snippet: Snippet
+    let item: AccountSnippet
+
+    private var snippet: Snippet { item.snippet }
 
     var body: some View {
-        Button("Copy Code") { Clipboard.copy(snippet.fragments.first?.code ?? "") }
+        if let store = app.store(item.account) {
+            actions(store)
+        }
+    }
+
+    @ViewBuilder
+    private func actions(_ store: SnippetStore) -> some View {
+        Button("Copy Code") {
+            app.markUsed(item)
+            Clipboard.copy(snippet.fragments.first?.code ?? "")
+        }
         if snippet.fragments.count > 1 {
             Menu("Copy File") {
                 ForEach(snippet.fragments) { fragment in
@@ -188,7 +232,22 @@ struct SnippetActions: View {
             Button("Duplicate") {
                 let copy = store.duplicate(snippet)
                 app.selection = .all
-                app.selectedSnippetID = copy.id
+                app.selectedSnippet = SnippetRef(account: item.account, id: copy.id)
+            }
+            let others = app.accounts.filter { $0.id != item.account }
+            if !others.isEmpty {
+                Menu("Copy to") {
+                    ForEach(others) { account in
+                        Button(account.info.displayName + "…") { app.requestTransfer(item, to: account.id, move: false) }
+                    }
+                }
+                if app.canMove(item) {
+                    Menu("Move to") {
+                        ForEach(others) { account in
+                            Button(account.info.displayName + "…") { app.requestTransfer(item, to: account.id, move: true) }
+                        }
+                    }
+                }
             }
             if snippet.id > 0 {
                 Button("Open in Browser") { NSWorkspace.shared.open(store.webURL(for: snippet)) }
@@ -206,6 +265,7 @@ struct SnippetCard: View {
     let snippet: Snippet
     let selected: Bool
     let dark: Bool
+    var account: AccountInfo?
 
     private var codePreview: String {
         let code = snippet.fragments.first?.code ?? ""
@@ -227,6 +287,7 @@ struct SnippetCard: View {
                     Text(snippet.title.isEmpty ? "Untitled" : snippet.title).font(.headline).lineLimit(1)
                     Spacer(minLength: 2)
                     if snippet.isFavorite { Image(systemName: "star.fill").foregroundStyle(.yellow).imageScale(.small) }
+                    if let account { AccountBadge(info: account, showName: false) }
                 }
                 HStack(spacing: 6) {
                     Text(Languages.displayName(for: snippet.primaryLanguage))

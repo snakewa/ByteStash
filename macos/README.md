@@ -48,6 +48,23 @@ Requires macOS 14 Sonoma or later. Universal (Apple silicon and Intel).
 - **Sharing** (Share → Sharing…): private, public, or shared with groups and people,
   each with Can view or Can edit, plus Lock editing. Groups you belong to appear under
   Shared in the sidebar.
+- **Several accounts** (Settings → Accounts → Add Account…), for example a personal server
+  and a work server. Each account keeps its own token, offline cache and pending changes;
+  the servers are never synced with each other.
+  - The sidebar's **All · Personal · Work** switch shows every account merged, or one.
+    In the merged view each snippet has a colored account badge, and search, quick search
+    and the menu bar cover all accounts.
+  - New snippets go to the account you're viewing. In the merged view ⌘N, the menu bar and
+    the global hotkeys use the default account (Settings → Accounts, normally Personal);
+    hold the New button to pick another account.
+  - **Copy to / Move to** (right-click, or the Snippet menu) creates a private copy on the
+    other server after you confirm. Tags and files carry over; sharing, pins and favorites
+    don't, because groups and users differ per server. Move also puts the original in its
+    Recycle Bin. Snippets other people own can be copied, not moved.
+  - Per account you can set a name, a color, and turn off **Keep an offline copy on this
+    Mac** (for example when work snippets must not be stored on a personal laptop).
+  - An expired session only affects that account: its cached snippets stay visible and the
+    sidebar footer offers "Sign in again".
 
 ## Keyboard shortcuts
 
@@ -57,7 +74,8 @@ Requires macOS 14 Sonoma or later. Universal (Apple silicon and Intel).
 | ⇧⌥⌘C | Save selected text as a snippet (global) |
 | ⌘N | New snippet |
 | ⌘K | Quick search |
-| ⌘R | Sync now |
+| ⌘R | Sync now (every account) |
+| ⌃⌘0, ⌃⌘1… | All accounts, or one account (with more than one account) |
 | ⌥⌘C | Copy the selected snippet's code |
 | ⇧⌘C | Copy the current file |
 | ⌘D | Favorite |
@@ -86,14 +104,14 @@ Requires Xcode 16. Dependencies (Swift packages): KeyboardShortcuts, Highlightr,
 
 ```
 ByteStash/
-  App/          entry point, menus, menu bar, AppState (account + session)
+  App/          entry point, menus, AppState (accounts, merged views, copy/move)
   API/          REST client and models
   Auth/         Keychain, OIDC web sign-in
   Store/        SnippetStore (cache, sync, outbox), search and filters
   Editor/       syntax-highlighted code view, language table
   Views/        sidebar, list, detail, sign-in, settings
   QuickSearch/  global hotkey panel
-ByteStashTests/ model, search, outbox and language tests
+ByteStashTests/ model, search, outbox, account and language tests
 ```
 
 ---
@@ -116,3 +134,12 @@ ByteStashTests/ model, search, outbox and language tests
 - **存選取文字**：任何 App 選好文字按 ⇧⌥⌘C 存成片段。自動貼上和這個功能需要開「輔助使用」權限。
 - **分享**：私人、公開，或指定群組和人（可檢視／可編輯），也可以鎖定編輯。側欄「共享」下會列出你的群組。
 - **離線**：所有片段都快取在本機，離線時的修改會排隊，連線後依序同步。
+- **多帳號**（設定 → 帳號 → Add Account…）：例如個人和公司各一台伺服器。每個帳號各自有 token、
+  離線快取和待同步的修改，兩台伺服器之間不會自動同步。
+  - 側欄上方的 **All · Personal · Work** 可以看全部（融合）或只看一個帳號；融合模式下每個片段都有帳號顏色標籤，
+    搜尋、快速搜尋和選單列會一起搜所有帳號。
+  - 新片段會放在目前看的帳號；融合模式下 ⌘N、選單列和全域快捷鍵用預設帳號（通常是 Personal），
+    按住 New 按鈕可以選其他帳號。
+  - **Copy to / Move to**（右鍵或 Snippet 選單）：確認後在另一台伺服器建立一份私人片段。
+    標籤和檔案會帶過去，分享設定、置頂和最愛不會；Move 會把原本那份放進回收筒。別人的片段只能複製。
+  - 每個帳號可以改名字、顏色，也可以關掉「在這台 Mac 保留離線副本」。

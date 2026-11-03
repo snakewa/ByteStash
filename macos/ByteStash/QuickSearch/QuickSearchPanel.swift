@@ -89,7 +89,7 @@ final class QuickSearchController {
 
     /// Saves the text selected in the frontmost app as a new snippet and opens it for editing.
     func saveSelection() async {
-        guard state.store != nil else { return }
+        guard state.preferredAccount != nil else { return }
         let source = NSWorkspace.shared.frontmostApplication
         guard let text = await Paster.captureSelection() else {
             NSSound.beep()
@@ -106,16 +106,18 @@ final class QuickSearchController {
     }
 
     private func createSnippet(from text: String, sourceApp: String?) {
-        guard let store = state.store else { return }
+        // Hotkeys always save to the default account (normally "Personal"), never silently
+        // to whichever account happens to be open.
+        guard let account = state.preferredAccount else { return }
         let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? "Clipboard"
         var draft = Snippet.newDraft(id: Fragment.newLocalID())
         draft.title = String(firstLine.trimmingCharacters(in: .whitespaces).prefix(60))
         draft.fragments[0].code = text
         draft.fragments[0].language = UserDefaults.standard.string(forKey: "defaultLanguage") ?? "plaintext"
         if let sourceApp { draft.description = "Saved from \(sourceApp)" }
-        let created = store.create(from: draft)
+        let created = account.store.create(from: draft)
         state.selection = .all
-        state.reveal(created.id)
+        state.reveal(SnippetRef(account: account.id, id: created.id))
     }
 }
 
