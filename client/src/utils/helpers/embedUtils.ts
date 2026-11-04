@@ -21,3 +21,27 @@ export const generateEmbedId = (params: EmbedParams): string => {
   const hashStr = Math.abs(hash).toString(16).padStart(16, '0').slice(0, 16);
   return hashStr;
 };
+
+/**
+ * The origin of the page that embeds this iframe, so resize messages go only to it.
+ * Uses location.ancestorOrigins (Chrome, Safari) and falls back to the referrer
+ * (Firefox). Returns null when neither is known.
+ */
+export const embedParentOrigin = (
+  win: Pick<Window, 'location'> = window,
+  referrer: string = document.referrer
+): string | null => {
+  const ancestors = (win.location as Location & { ancestorOrigins?: DOMStringList }).ancestorOrigins;
+  if (ancestors && ancestors.length > 0 && ancestors[0] && ancestors[0] !== 'null') {
+    return ancestors[0];
+  }
+  if (referrer) {
+    try {
+      const origin = new URL(referrer).origin;
+      if (origin && origin !== 'null') return origin;
+    } catch {
+      // not a URL
+    }
+  }
+  return null;
+};
