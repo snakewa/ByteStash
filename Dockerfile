@@ -32,9 +32,19 @@ COPY server/docs ./docs
 # Copy client build
 COPY --from=client-build /app/client/build /client/build
 
-# Create output directory
-RUN mkdir -p ./data/snippets
+# Data directory (server/src/config/database.js resolves it to /data/snippets),
+# owned by the unprivileged user the app runs as.
+RUN apk add --no-cache su-exec && \
+      mkdir -p /data/snippets && \
+      chown node:node /data/snippets
+
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 5000
 
+# The image starts as root only so docker-entrypoint.sh can fix the ownership of
+# data volumes written by older (root) images; it then drops to the "node" user
+# with su-exec before starting the app, so the server never runs as root.
+ENTRYPOINT ["docker-entrypoint.sh"]
+# nosemgrep: dockerfile.security.missing-user.missing-user
 CMD ["node", "src/app.js"]

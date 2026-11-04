@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Snippet } from '../../../types/snippets';
 import { getLanguageLabel, getFullFileName, getFileIcon } from '../../../utils/language/languageUtils';
 import { basePath } from '../../../utils/api/basePath';
-import { generateEmbedId } from '../../../utils/helpers/embedUtils';
+import { embedParentOrigin, generateEmbedId } from '../../../utils/helpers/embedUtils';
 import { EmbedCodeView } from './EmbedCodeView';
 
 interface EmbedViewProps {
@@ -92,10 +92,13 @@ export const EmbedView: React.FC<EmbedViewProps> = ({
   }, [shareId, showTitle, showDescription, showFileHeaders, showPoweredBy, theme, fragmentIndex]);
 
   useEffect(() => {
+    // Only the page that embeds us gets the size, not any origin. Without a known
+    // parent origin (referrer stripped), skip resizing rather than broadcast.
+    const parentOrigin = embedParentOrigin();
     const updateHeight = () => {
-      if (containerRef.current) {
+      if (containerRef.current && parentOrigin) {
         const height = containerRef.current.offsetHeight;
-        window.parent.postMessage({ type: 'resize', height, embedId }, '*');
+        window.parent.postMessage({ type: 'resize', height, embedId }, parentOrigin);
       }
     };
 
