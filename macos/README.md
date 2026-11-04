@@ -119,6 +119,7 @@ ByteStash/
   Editor/       syntax-highlighted code view, language table
   Views/        sidebar, list, detail, sign-in, settings
   QuickSearch/  global hotkey panel
+Design/       AppIcon.svg (source of the app icon in Resources/Assets.xcassets)
 ByteStashTests/ model, search, outbox, account and language tests
 ```
 
