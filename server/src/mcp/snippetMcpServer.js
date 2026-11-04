@@ -22,7 +22,13 @@ const fragmentInputSchema = z.object({
   language: z.string().optional().describe('Language id, e.g. "javascript", "python", "plaintext"'),
 });
 
-function summarizeSnippet(snippet) {
+// Favorite/pinned are the owner's personal flags, so recipients don't see them.
+function ownerFlags(snippet, viewerId) {
+  if (snippet.user_id !== viewerId) return {};
+  return { is_favorite: !!snippet.is_favorite, is_pinned: !!snippet.is_pinned };
+}
+
+function summarizeSnippet(snippet, viewerId) {
   return {
     id: snippet.id,
     title: snippet.title,
@@ -32,8 +38,7 @@ function summarizeSnippet(snippet) {
     shared_with: snippet.shares || [],
     owner: snippet.username,
     is_public: !!snippet.is_public,
-    is_favorite: !!snippet.is_favorite,
-    is_pinned: !!snippet.is_pinned,
+    ...ownerFlags(snippet, viewerId),
     updated_at: snippet.updated_at,
     files: (snippet.fragments || []).map((f) => ({
       file_name: f.file_name,
@@ -42,7 +47,7 @@ function summarizeSnippet(snippet) {
   };
 }
 
-function fullSnippet(snippet) {
+function fullSnippet(snippet, viewerId) {
   return {
     id: snippet.id,
     title: snippet.title,
@@ -54,8 +59,7 @@ function fullSnippet(snippet) {
     edit_permission: snippet.edit_permission,
     can_edit: snippet.can_edit,
     is_public: !!snippet.is_public,
-    is_favorite: !!snippet.is_favorite,
-    is_pinned: !!snippet.is_pinned,
+    ...ownerFlags(snippet, viewerId),
     updated_at: snippet.updated_at,
     fragments: (snippet.fragments || []).map((f) => ({
       id: f.id,
@@ -161,7 +165,7 @@ export function createMcpServer(userId, { isAdmin = false } = {}) {
         });
 
         return ok({
-          snippets: snippets.map(summarizeSnippet),
+          snippets: snippets.map((snippet) => summarizeSnippet(snippet, userId)),
           pagination: { total, offset, limit, hasMore: offset + limit < total },
         });
       } catch (error) {
@@ -186,7 +190,7 @@ export function createMcpServer(userId, { isAdmin = false } = {}) {
         if (!snippet) {
           return fail(`Snippet ${args.id} not found`);
         }
-        return ok(fullSnippet(snippet));
+        return ok(fullSnippet(snippet, userId));
       } catch (error) {
         Logger.error('MCP get_snippet failed:', error);
         return fail('Failed to get snippet');
@@ -231,7 +235,7 @@ export function createMcpServer(userId, { isAdmin = false } = {}) {
           userId,
           { isAdmin }
         );
-        return ok(fullSnippet(created));
+        return ok(fullSnippet(created, userId));
       } catch (error) {
         Logger.error('MCP create_snippet failed:', error);
         return fail(errorMessage(error, 'Failed to create snippet'));
@@ -265,6 +269,11 @@ export function createMcpServer(userId, { isAdmin = false } = {}) {
         const existing = await snippetService.findById(args.id, userId);
         if (!existing) {
           return fail(`Snippet ${args.id} not found`);
+        }
+        // Say so instead of silently ignoring sharing changes from someone who isn't the owner
+        const settingsArgs = ['visibility', 'is_public', 'share_with', 'edit_permission'];
+        if (existing.user_id !== userId && settingsArgs.some((key) => args[key] !== undefined)) {
+          return fail('Only the owner can change visibility, share_with or edit_permission');
         }
 
         let visibility = args.visibility;
@@ -301,7 +310,7 @@ export function createMcpServer(userId, { isAdmin = false } = {}) {
         if (!updated) {
           return fail(`Snippet ${args.id} not found`);
         }
-        return ok(fullSnippet(updated));
+        return ok(fullSnippet(updated, userId));
       } catch (error) {
         Logger.error('MCP update_snippet failed:', error);
         return fail(errorMessage(error, 'Failed to update snippet'));

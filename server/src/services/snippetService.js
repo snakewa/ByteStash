@@ -45,7 +45,7 @@ export function canEditSnippet(snippet, userId) {
 
 /**
  * Normalizes requested share targets to [{ type, id, permission }]. Users may be given by
- * id or username. Admins can share with any group, others only with groups they belong to
+ * id or username (not email). Admins can share with any group, others only with groups they belong to
  * (groups the snippet is already shared with stay allowed).
  */
 function resolveShareTargets(targets, { userId, isAdmin, existing }) {
@@ -65,17 +65,16 @@ function resolveShareTargets(targets, { userId, isAdmin, existing }) {
 
     if (target?.type === "group") {
       const groupId = parseInt(target.id);
-      if (!groupId || !groupRepository.findById(groupId)) {
+      // Groups you are not in look the same as missing ones, so ids can't be probed
+      const allowed = isAdmin || existingGroupIds.has(groupId) || groupRepository.isMember(groupId, userId);
+      if (!groupId || !allowed || !groupRepository.findById(groupId)) {
         throw new VisibilityError(`Group not found: ${target.id}`);
-      }
-      if (!isAdmin && !existingGroupIds.has(groupId) && !groupRepository.isMember(groupId, userId)) {
-        throw new VisibilityError("You can only share with groups you belong to");
       }
       result.set(`group:${groupId}`, { type: "group", id: groupId, permission });
     } else if (target?.type === "user") {
       const user = target.id != null
         ? groupRepository.findUserById(parseInt(target.id))
-        : groupRepository.findUserByUsernameOrEmail(target.username);
+        : groupRepository.findUserByUsername(target.username); // never by email: that would reveal who is registered
       if (!user) {
         throw new VisibilityError(`User not found: ${target.id ?? target.username}`);
       }

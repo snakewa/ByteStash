@@ -122,6 +122,14 @@ class GroupRepository {
     return getDb().prepare('SELECT id, username FROM users WHERE id = ? AND id != 0').get(id);
   }
 
+  findUserByUsername(username) {
+    const value = (username || '').trim().toLowerCase();
+    if (!value) return null;
+    return getDb()
+      .prepare('SELECT id, username FROM users WHERE id != 0 AND username_normalized = ?')
+      .get(value);
+  }
+
   findUserByUsernameOrEmail(identifier) {
     const value = (identifier || '').trim();
     if (!value) return null;
