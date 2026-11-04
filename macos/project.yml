@@ -36,6 +36,10 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: app.bytestash.mac.auth
             CFBundleURLSchemes: [bytestash]
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: app.bytestash.mac.snippets
+            UTTypeDescription: ByteStash Snippets
+            UTTypeConformsTo: [public.data]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.bytestash.mac
@@ -48,6 +52,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "-"
         COMBINE_HIDPI_IMAGES: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
   ByteStashTests:
     type: bundle.unit-test
     platform: macOS

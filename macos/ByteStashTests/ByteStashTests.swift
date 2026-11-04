@@ -297,6 +297,23 @@ final class AccountTests: XCTestCase {
     func testGroupItemsDifferPerAccount() {
         XCTAssertNotEqual(SidebarItem.group(4, "devs", account: "a"), SidebarItem.group(4, "devs", account: "b"))
     }
+
+    func testDragPayloadRoundTrip() throws {
+        let drag = SnippetDrag(refs: [SnippetRef(account: "work", id: 3), SnippetRef(account: "personal", id: 3)], text: "echo")
+        let decoded = try JSONDecoder().decode(SnippetDrag.self, from: JSONEncoder().encode(drag))
+        XCTAssertEqual(decoded.refs, drag.refs)
+        XCTAssertEqual(decoded.text, "echo")
+    }
+
+    func testDropTargets() {
+        XCTAssertTrue(SidebarDropTarget.accepts(.category("ops")))
+        XCTAssertTrue(SidebarDropTarget.accepts(.pinned))
+        XCTAssertTrue(SidebarDropTarget.accepts(.favorites))
+        XCTAssertTrue(SidebarDropTarget.accepts(.recycled))
+        XCTAssertFalse(SidebarDropTarget.accepts(.all))
+        XCTAssertFalse(SidebarDropTarget.accepts(.publicFeed))
+        XCTAssertFalse(SidebarDropTarget.accepts(.shared))
+    }
 }
 
 final class MarkdownPreviewTests: XCTestCase {

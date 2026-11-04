@@ -84,45 +84,40 @@ struct AppCommands: Commands {
             .keyboardShortcut("f", modifiers: [.command, .option])
         }
         CommandMenu("Snippet") {
-            let item = state.selectedItem
-            let snippet = item?.snippet
-            let store = item.flatMap { state.store($0.account) }
-            let own = snippet.map { store?.isOwn($0) == true } ?? false
-            Button("Copy Code") {
-                if let item { state.markUsed(item) }
-                Clipboard.copy(snippet?.fragments.first?.code ?? "")
-            }
-            .keyboardShortcut("c", modifiers: [.command, .option])
-            .disabled(snippet == nil)
-            Button(snippet?.isFavorite == true ? "Remove from Favorites" : "Add to Favorites") {
-                if let snippet { store?.setFavorite(snippet, !snippet.isFavorite) }
-            }
-            .keyboardShortcut("d")
-            .disabled(!own)
-            Button(snippet?.isPinned == true ? "Unpin" : "Pin") {
-                if let snippet { store?.setPinned(snippet, !snippet.isPinned) }
-            }
-            .keyboardShortcut("p", modifiers: [.command, .shift])
-            .disabled(!own)
-            if let item, state.hasMultipleAccounts, snippet?.isRecycled == false {
+            // Every command here acts on the whole selection.
+            let items = state.selectedItems
+            let live = items.filter { !$0.snippet.isRecycled }
+            let ownLive = live.filter { state.canMove($0) }
+            let allFavorite = !ownLive.isEmpty && ownLive.allSatisfy(\.snippet.isFavorite)
+            let allPinned = !ownLive.isEmpty && ownLive.allSatisfy(\.snippet.isPinned)
+            Button(items.count > 1 ? "Copy Code of \(items.count) Snippets" : "Copy Code") { state.copyCode(items) }
+                .keyboardShortcut("c", modifiers: [.command, .option])
+                .disabled(items.isEmpty)
+            Button(allFavorite ? "Remove from Favorites" : "Add to Favorites") { state.setFavorite(ownLive, !allFavorite) }
+                .keyboardShortcut("d")
+                .disabled(ownLive.isEmpty)
+            Button(allPinned ? "Unpin" : "Pin") { state.setPinned(ownLive, !allPinned) }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+                .disabled(ownLive.isEmpty)
+            if state.hasMultipleAccounts, !live.isEmpty {
                 Divider()
                 Menu("Copy to") {
-                    ForEach(state.accounts.filter { $0.id != item.account }) { account in
-                        Button(account.info.displayName + "…") { state.requestTransfer(item, to: account.id, move: false) }
+                    ForEach(state.accounts) { account in
+                        Button(account.info.displayName + "…") { state.requestTransfer(live, to: account.id, move: false) }
+                            .disabled(!live.contains { $0.account != account.id })
                     }
                 }
                 Menu("Move to") {
-                    ForEach(state.accounts.filter { $0.id != item.account }) { account in
-                        Button(account.info.displayName + "…") { state.requestTransfer(item, to: account.id, move: true) }
+                    ForEach(state.accounts) { account in
+                        Button(account.info.displayName + "…") { state.requestTransfer(live, to: account.id, move: true) }
+                            .disabled(!live.contains { $0.account != account.id })
                     }
                 }
-                .disabled(!state.canMove(item))
+                .disabled(ownLive.isEmpty)
             }
             Divider()
-            Button("Move to Recycle Bin") {
-                if let snippet { store?.moveToRecycleBin(snippet) }
-            }
-            .disabled(!own || snippet?.isRecycled == true)
+            Button("Move to Recycle Bin") { state.recycle(ownLive) }
+                .disabled(ownLive.isEmpty)
         }
         CommandGroup(before: .sidebar) {
             Button("as List") { UserDefaults.standard.set("list", forKey: "listLayout") }
