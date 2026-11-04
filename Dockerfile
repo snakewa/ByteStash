@@ -45,6 +45,7 @@ EXPOSE 5000
 # The image starts as root only so docker-entrypoint.sh can fix the ownership of
 # data volumes written by older (root) images; it then drops to the "node" user
 # with su-exec before starting the app, so the server never runs as root.
+# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
 ENTRYPOINT ["docker-entrypoint.sh"]
 # nosemgrep: dockerfile.security.missing-user.missing-user
 CMD ["node", "src/app.js"]
