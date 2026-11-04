@@ -11,18 +11,20 @@ packages:
   Highlightr:
     url: https://github.com/raspu/Highlightr
     from: "2.2.1"
-  MarkdownUI:
-    url: https://github.com/gonzalezreal/swift-markdown-ui
-    from: "2.4.0"
 targets:
   ByteStash:
     type: application
     platform: macOS
-    sources: [ByteStash]
+    sources:
+      - path: ByteStash
+        excludes: ["Resources/MarkdownPreview", "Resources/MarkdownPreview/**"]
+      # Copied as a folder so the page and its scripts keep their relative paths.
+      - path: ByteStash/Resources/MarkdownPreview
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: KeyboardShortcuts
       - package: Highlightr
-      - package: MarkdownUI
     info:
       path: ByteStash/Resources/Info.plist
       properties:

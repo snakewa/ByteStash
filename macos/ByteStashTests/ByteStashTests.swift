@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import ByteStash
 
@@ -295,5 +296,68 @@ final class AccountTests: XCTestCase {
 
     func testGroupItemsDifferPerAccount() {
         XCTAssertNotEqual(SidebarItem.group(4, "devs", account: "a"), SidebarItem.group(4, "devs", account: "b"))
+    }
+}
+
+final class MarkdownPreviewTests: XCTestCase {
+    func testBundlesThePreviewPage() throws {
+        let index = try XCTUnwrap(MarkdownPreviewPage.indexURL)
+        let folder = index.deletingLastPathComponent()
+        for file in ["preview.js", "preview.css", "vendor/marked.min.js", "vendor/highlight.min.js",
+                     "vendor/mermaid.min.js", "vendor/hljs-github.min.css", "vendor/hljs-github-dark.min.css"] {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent(file).path), file)
+        }
+    }
+
+    func testRenderScriptPassesTextAsAStringLiteral() throws {
+        let text = "# Hi \"there\"\n</script><script>alert(1)</script> \\ 整體元件 `x`"
+        let script = MarkdownPreviewPage.renderScript(text: text, dark: true)
+        XCTAssertTrue(script.hasPrefix("ByteStash.render(["))
+        XCTAssertTrue(script.hasSuffix("[0], {dark: true}); undefined"))
+        let start = try XCTUnwrap(script.firstIndex(of: "["))
+        let end = try XCTUnwrap(script.range(of: "[0], {dark")).lowerBound
+        let decoded = try JSONSerialization.jsonObject(with: Data(script[start..<end].utf8)) as? [String]
+        XCTAssertEqual(decoded, [text])
+        XCTAssertTrue(MarkdownPreviewPage.renderScript(text: "", dark: false).contains("{dark: false}"))
+    }
+
+    func testNavigationPolicy() throws {
+        let index = try XCTUnwrap(MarkdownPreviewPage.indexURL)
+        let anchor = try XCTUnwrap(URL(string: index.absoluteString + "#setup"))
+        let web = try XCTUnwrap(URL(string: "https://example.com/docs"))
+        XCTAssertEqual(MarkdownPreviewPage.policy(for: index, isLinkClick: false), .allow)
+        XCTAssertEqual(MarkdownPreviewPage.policy(for: anchor, isLinkClick: true), .allow)
+        XCTAssertEqual(MarkdownPreviewPage.policy(for: web, isLinkClick: true), .openExternally)
+        XCTAssertEqual(MarkdownPreviewPage.policy(for: try XCTUnwrap(URL(string: "mailto:a@b.c")), isLinkClick: true), .openExternally)
+        XCTAssertEqual(MarkdownPreviewPage.policy(for: web, isLinkClick: false), .block)
+        XCTAssertEqual(MarkdownPreviewPage.policy(for: URL(fileURLWithPath: "/etc/hosts"), isLinkClick: true), .block)
+        XCTAssertEqual(MarkdownPreviewPage.policy(for: try XCTUnwrap(URL(string: "ssh://host")), isLinkClick: true), .block)
+    }
+
+    func testRasterizesExportedPDF() throws {
+        let data = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 120, height: 60)
+        let consumer = try XCTUnwrap(CGDataConsumer(data: data as CFMutableData))
+        let context = try XCTUnwrap(CGContext(consumer: consumer, mediaBox: &box, nil))
+        context.beginPDFPage(nil)
+        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 10, y: 10, width: 50, height: 20))
+        context.endPDFPage()
+        context.closePDF()
+
+        let white = CGColor(red: 1, green: 1, blue: 1, alpha: 1)
+        let png = try XCTUnwrap(PreviewImage.png(fromPDF: data as Data, background: white))
+        let rep = try XCTUnwrap(NSBitmapImageRep(data: png))
+        XCTAssertEqual(rep.pixelsWide, 240)
+        XCTAssertEqual(rep.pixelsHigh, 120)
+
+        let capped = try XCTUnwrap(PreviewImage.png(fromPDF: data as Data, background: white, maxPixels: 60))
+        XCTAssertEqual(try XCTUnwrap(NSBitmapImageRep(data: capped)).pixelsWide, 60)
+        XCTAssertNil(PreviewImage.png(fromPDF: Data("not a pdf".utf8), background: white))
+    }
+
+    func testSanitizesExportName() {
+        XCTAssertEqual(PreviewFiles.sanitized("a/b:c"), "a-b-c")
+        XCTAssertEqual(PreviewFiles.sanitized("  "), "Snippet")
     }
 }
