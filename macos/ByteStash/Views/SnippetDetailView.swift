@@ -18,6 +18,7 @@ struct SnippetDetailView: View {
     @State private var showShareSheet = false
     @State private var showSharing = false
     @State private var copied = false
+    @StateObject private var markdownController = MarkdownPreviewController()
 
     @AppStorage("markdownPreview") private var markdownPreview = true
     @AppStorage(EditorSettings.fontSizeKey) private var fontSize: Double = 13
@@ -49,7 +50,7 @@ struct SnippetDetailView: View {
             Divider()
             if draft.fragments.indices.contains(selectedFragment),
                isMarkdown, markdownPreview {
-                MarkdownPreview(text: draft.fragments[selectedFragment].code)
+                MarkdownPreview(text: draft.fragments[selectedFragment].code, controller: markdownController)
             } else if draft.fragments.indices.contains(selectedFragment) {
                 CodeEditor(
                     text: $draft.fragments[selectedFragment].code,
@@ -196,6 +197,15 @@ struct SnippetDetailView: View {
                     Text(Languages.displayName(for: draft.fragments[selectedFragment].language))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                if isMarkdown && markdownPreview {
+                    Button {
+                        markdownController.exportImage(suggestedName: draft.title.isEmpty ? draft.fragments[selectedFragment].fileName : draft.title)
+                    } label: {
+                        Image(systemName: "camera")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Export the rendered preview as an image")
                 }
                 Button {
                     Clipboard.copy(draft.fragments[selectedFragment].code)

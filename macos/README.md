@@ -27,8 +27,11 @@ Requires macOS 14 Sonoma or later. Universal (Apple silicon and Intel).
   dark theme), line numbers, auto-indent, find bar (⌘F inside the editor). Changes save
   automatically.
 - **List or grid** (⌥⌘1 / ⌥⌘2): the grid shows cards with highlighted code previews.
-- **Markdown**: Markdown files open in a rendered preview (GitHub style, highlighted
-  code blocks); switch to Source to edit (⌥⌘P).
+- **Markdown**: Markdown files open in a rendered preview that matches the web app:
+  GitHub-flavoured Markdown (tables, task lists, line breaks kept), `> [!NOTE]` style
+  alerts, highlighted code blocks, and **Mermaid diagrams** with zoom (buttons, ⌘-scroll or
+  pinch, drag to pan), copy code, SVG/PNG download and full screen. The camera button exports
+  the whole preview as PNG (or PDF). Switch to Source to edit (⌥⌘P).
 - **Search** in the list: words match title, description, tags, file names and code;
   `#tag` and `lang:python` narrow the results.
 - **Quick search** (⌥⌘Space anywhere, configurable): type, ↑↓ to pick, ↩ copies the
@@ -100,7 +103,9 @@ xcodegen generate
 open ByteStash.xcodeproj
 ```
 
-Requires Xcode 16. Dependencies (Swift packages): KeyboardShortcuts, Highlightr, MarkdownUI.
+Requires Xcode 16. Dependencies (Swift packages): KeyboardShortcuts, Highlightr. The Markdown
+preview bundles marked, highlight.js and Mermaid under `ByteStash/Resources/MarkdownPreview/vendor`
+(no network needed); refresh them with `scripts/update-markdown-vendor.sh`.
 
 ```
 ByteStash/
@@ -109,7 +114,8 @@ ByteStash/
   Auth/         Keychain, OIDC web sign-in
   Store/        SnippetStore (cache, sync, outbox), search and filters
   Editor/       syntax-highlighted code view, language table
-  Views/        sidebar, list, detail, sign-in, settings
+  Views/        sidebar, list, detail, sign-in, settings, Markdown preview (web view)
+  Resources/MarkdownPreview/  preview page (preview.js/css) and bundled JS libraries
   QuickSearch/  global hotkey panel
 ByteStashTests/ model, search, outbox, account and language tests
 ```
@@ -126,7 +132,7 @@ ByteStashTests/ model, search, outbox, account and language tests
 - **三欄介面**：側欄（全部、置頂、最愛、未分類、共享給我、公開、各標籤和語言、回收桶）、清單、編輯器。
 - **編輯器**：語法高亮、行號、多檔案、依檔名自動判斷語言、自動儲存。
 - **清單／格狀**（⌥⌘1 / ⌥⌘2）：格狀模式用卡片顯示有語法高亮的程式碼預覽。
-- **Markdown**：預覽（程式碼區塊有語法高亮）和原始碼可以切換（⌥⌘P）。
+- **Markdown**：預覽和網頁版一致：GFM（表格、待辦清單、保留換行）、`> [!NOTE]` 提示框、程式碼語法高亮，以及 **Mermaid 圖表**（放大縮小、⌘ 捲動或雙指縮放、拖曳平移、複製程式碼、下載 SVG/PNG、全螢幕）。相機按鈕可把整份預覽匯出成 PNG（或 PDF）。和原始碼可以切換（⌥⌘P）。
 - **搜尋**：標題、說明、標籤、檔名和程式碼全文；`#標籤`、`lang:python` 可縮小範圍。
 - **快速搜尋**：任何地方按 ⌥⌘Space，↩ 複製程式碼，⌘↩ 在主視窗開啟。
 - **選單列面板**：搜尋框、最近用過、置頂和最愛、最近編輯，點一下就複製。
