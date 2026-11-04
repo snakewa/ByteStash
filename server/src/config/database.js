@@ -25,7 +25,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 function getDatabasePath() {
-  const dbPath = join(__dirname, "../../../data/snippets");
+  // BYTESTASH_DB_DIR lets tests run against a throwaway database
+  const dbPath = process.env.BYTESTASH_DB_DIR || join(__dirname, "../../../data/snippets");
   if (!fs.existsSync(dbPath)) {
     fs.mkdirSync(dbPath, { recursive: true });
   }
